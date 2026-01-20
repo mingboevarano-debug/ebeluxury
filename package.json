@@ -1,0 +1,46 @@
+{
+  "name": "repair-service-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "cloudinary": "^1.41.0",
+    "date-fns": "^2.30.0",
+    "docx": "^9.5.1",
+    "fabric": "^7.1.0",
+    "file-saver": "^2.0.5",
+    "firebase": "^10.7.0",
+    "jspdf": "^3.0.4",
+    "jspdf-autotable": "^5.0.2",
+    "next": "^14.0.0",
+    "next-cloudinary": "^5.11.0",
+    "react": "^18.2.0",
+    "react-countdown": "^2.3.5",
+    "react-data-table-component": "^7.7.0",
+    "react-dom": "^18.2.0",
+    "react-hook-form": "^7.48.0",
+    "react-icons": "^5.5.0",
+    "react-toastify": "^11.0.5",
+    "recharts": "^3.6.0",
+    "styled-components": "^6.1.19",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/file-saver": "^2.0.7",
+    "@types/node": "^20.10.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/recharts": "^1.8.29",
+    "autoprefixer": "^10.4.16",
+    "eslint": "^8.54.0",
+    "eslint-config-next": "^14.0.0",
+    "postcss": "^8.4.0",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5.3.0"
+  }
+}

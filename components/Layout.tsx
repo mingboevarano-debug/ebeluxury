@@ -1,0 +1,184 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { getCurrentUser, signOut, subscribeToAuthChanges } from '@/lib/auth';
+import { User } from '@/types';
+import WarningBell from './WarningBell';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+
+interface LayoutProps {
+  children: React.ReactNode;
+}
+
+export default function Layout({ children }: LayoutProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [user, setUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToAuthChanges((currentUser: User | null) => {
+      setUser(currentUser);
+      setLoading(false);
+
+      const isPublicRoute = pathname === '/login' || pathname.startsWith('/secret');
+
+      if (!currentUser && !isPublicRoute) {
+        router.push('/login');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [router, pathname]);
+
+  const handleSignOut = async () => {
+    await signOut();
+    router.push('/login');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
+        <div className="text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  const navigation = [
+    { name: t('nav.dashboard'), href: `/dashboard/${user.role}` },
+    { name: t('nav.attendance'), href: '/dashboard/attendance' },
+    { name: t('nav.calendar'), href: '/dashboard/calendar' },
+    { name: t('nav.meetings'), href: '/dashboard/meetings' },
+    { name: t('nav.statistics'), href: '/dashboard/statistics' },
+    // Only show accounting link for HR, Admin, and Director
+    ...(['hr', 'admin', 'director'].includes(user.role) ? [{ name: t('nav.accounting'), href: '/dashboard/accounting' }] : []),
+    // Only show finance link for HR, Admin, and Director
+    ...(['hr', 'admin', 'director'].includes(user.role) ? [{ name: t('nav.finance') || 'Finance', href: '/dashboard/finance' }] : []),
+    // Add more links here when they exist, e.g., Projects, Contracts
+  ];
+
+  return (
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black bg-opacity-50 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <aside
+        className={`
+          fixed inset-y-0 left-0 z-30 w-64 bg-gray-800 border-r border-gray-700 transform transition-transform duration-300 ease-in-out
+          lg:static lg:transform-none
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
+      >
+        <div className="h-full flex flex-col">
+          {/* Sidebar Header */}
+          <div className="h-16 flex items-center justify-between px-6 bg-gray-900 border-b border-gray-700">
+            <h1 className="text-xl font-bold text-white tracking-wider">
+              {t('app.title')}
+            </h1>
+            <button
+              className="lg:hidden text-gray-400 hover:text-white"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <span className="sr-only">Close sidebar</span>
+              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Navigation Links */}
+          <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <a
+                  key={item.name}
+                  href={item.href}
+                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                    : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                >
+                  {item.name}
+                </a>
+              );
+            })}
+          </div>
+
+          {/* User Profile / Footer */}
+          <div className="p-4 border-t border-gray-700 bg-gray-800">
+            <div className="flex items-center mb-4">
+              <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
+                {user.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="ml-3">
+                <p className="text-sm font-medium text-white">{user.name}</p>
+                <p className="text-xs text-gray-400 capitalize">{t(`role.${user.role}` as any)}</p>
+              </div>
+            </div>
+            <button
+              onClick={handleSignOut}
+              className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+            >
+              {t('signout')}
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col overflow-hidden bg-gray-50">
+        {/* Top Header */}
+        <header className="flex items-center justify-between lg:justify-end h-16 px-4 lg:px-8 bg-white border-b border-gray-200">
+          <button
+            className="lg:hidden p-2 -ml-2 text-gray-500 hover:text-gray-700"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <span className="sr-only">Open sidebar</span>
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+
+          <div className="flex items-center space-x-4">
+            <LanguageSwitcher />
+            <WarningBell />
+          </div>
+        </header>
+
+        {/* Page Content */}
+        <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+          <div className="max-w-7xl mx-auto">
+            {children}
+          </div>
+        </div>
+      </main>
+      <ToastContainer
+        position="top-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
+    </div>
+  );
+}
