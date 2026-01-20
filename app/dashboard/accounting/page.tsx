@@ -14,6 +14,15 @@ import { subscribeToAuthChanges } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
 
+
+const getSalaryValue = (salary: number | number[] | undefined): number => {
+    if (!salary) return 0;
+    if (Array.isArray(salary)) {
+        return salary.reduce((sum, val) => sum + val, 0);
+    }
+    return salary;
+};
+
 export default function AccountingDashboard() {
     const router = useRouter();
     const [payments, setPayments] = useState<Payment[]>([]);
@@ -34,7 +43,7 @@ export default function AccountingDashboard() {
         // Subscribe to auth changes to get current user
         const unsubscribe = subscribeToAuthChanges((currentUser: User | null) => {
             setUser(currentUser);
-            
+
             if (!currentUser) {
                 // User not logged in, Layout will handle redirect
                 setCheckingAccess(false);
@@ -98,14 +107,14 @@ export default function AccountingDashboard() {
         setSubmitting(true);
         try {
             console.log('Creating payment for user:', user.id, 'Amount:', amount);
-            
+
             const paymentId = await createPayment({
                 userId: user.id,
                 userName: user.name,
                 amount: amount,
                 date: new Date()
             });
-            
+
             console.log('Payment created with ID:', paymentId);
 
             // Clear fines after payment (like HR dashboard does)
@@ -113,7 +122,7 @@ export default function AccountingDashboard() {
             await updateUser(user.id, {
                 fines: 0
             });
-            
+
             console.log('Fines cleared, refreshing data');
 
             // Refresh all data
@@ -250,7 +259,7 @@ export default function AccountingDashboard() {
                                                 <div className="bg-gray-50 p-4 rounded-md text-sm space-y-1">
                                                     <div className="flex justify-between">
                                                         <span className="text-gray-500">{t('hr.salary')}:</span>
-                                                        <span className="font-medium text-gray-900">{selectedUser.salary?.toLocaleString()} UZS</span>
+                                                        <span className="font-medium text-gray-900">{getSalaryValue(selectedUser.salary).toLocaleString()} UZS</span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span className="text-gray-500">{t('hr.fines')}:</span>
@@ -258,7 +267,7 @@ export default function AccountingDashboard() {
                                                     </div>
                                                     <div className="border-t border-gray-200 pt-1 flex justify-between font-bold">
                                                         <span className="text-gray-900">{t('hr.net_salary')}:</span>
-                                                        <span className="text-green-600">{((selectedUser.salary || 0) - (selectedUser.fines || 0)).toLocaleString()} UZS</span>
+                                                        <span className="text-green-600">{(getSalaryValue(selectedUser.salary) - (selectedUser.fines || 0)).toLocaleString()} UZS</span>
                                                     </div>
                                                 </div>
                                             )}

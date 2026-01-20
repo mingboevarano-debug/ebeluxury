@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { FaSave, FaTrash, FaEraser, FaPencil, FaTimes, FaDownload, FaArrowLeft, FaArrowRight } from 'react-icons/fa';
+import { FaSave, FaTrash, FaEraser, FaPen, FaTimes, FaDownload, FaArrowLeft, FaArrowRight } from 'react-icons/fa';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Draft } from '@/types';
 import { createDraft, updateDraft } from '@/lib/db';
@@ -47,7 +47,7 @@ export default function DraftDrawing({
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
-  
+
   const pathsRef = useRef<DrawingPath[]>([]);
   const currentPathRef = useRef<DrawingPath | null>(null);
   const historyRef = useRef<DrawingPath[][]>([]);
@@ -117,7 +117,7 @@ export default function DraftDrawing({
   const redrawCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
@@ -147,7 +147,9 @@ export default function DraftDrawing({
     });
   }, []);
 
-  const getPointFromEvent = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>): Point | null => {
+  const getPointFromEvent = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ): Point | null => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
@@ -216,7 +218,7 @@ export default function DraftDrawing({
 
     if (currentPathRef.current.points.length > 0) {
       pathsRef.current.push(currentPathRef.current);
-      
+
       // Save to history
       historyRef.current = historyRef.current.slice(0, historyStepRef.current + 1);
       historyRef.current.push([...pathsRef.current]);
@@ -225,7 +227,7 @@ export default function DraftDrawing({
 
     setIsDrawing(false);
     currentPathRef.current = null;
-    
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -324,21 +326,19 @@ export default function DraftDrawing({
   };
 
   const colors = [
-    '#000000', // Black
-    '#FF0000', // Red
-    '#0000FF', // Blue
-    '#00FF00', // Green
-    '#FFFF00', // Yellow
-    '#FF00FF', // Magenta
-    '#00FFFF', // Cyan
-    '#FFA500', // Orange
-    '#800080', // Purple
-    '#A52A2A', // Brown
+    '#000000',
+    '#FF0000',
+    '#0000FF',
+    '#00FF00',
+    '#FFFF00',
+    '#FF00FF',
+    '#00FFFF',
+    '#FFA500',
+    '#800080',
+    '#A52A2A',
   ];
 
-  if (!isOpen) {
-    return null;
-  }
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900 bg-opacity-95 flex flex-col">
@@ -347,7 +347,9 @@ export default function DraftDrawing({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold">{t('foreman.draft.title') || 'Draft Drawing'}</h2>
-            <p className="text-indigo-100 text-sm mt-1">{t('foreman.draft.subtitle') || 'Draw your draft plans'}</p>
+            <p className="text-indigo-100 text-sm mt-1">
+              {t('foreman.draft.subtitle') || 'Draw your draft plans'}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -364,7 +366,9 @@ export default function DraftDrawing({
           {/* Title and Description */}
           <div className="space-y-4 mb-6">
             <div>
-              <label className="block text-sm font-medium mb-2">{t('foreman.draft.draft_title') || 'Draft Title'} *</label>
+              <label className="block text-sm font-medium mb-2">
+                {t('foreman.draft.draft_title') || 'Draft Title'} *
+              </label>
               <input
                 type="text"
                 value={title}
@@ -374,7 +378,9 @@ export default function DraftDrawing({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-2">{t('foreman.draft.description') || 'Description'}</label>
+              <label className="block text-sm font-medium mb-2">
+                {t('foreman.draft.description') || 'Description'}
+              </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -396,7 +402,7 @@ export default function DraftDrawing({
                     tool === 'pen' ? 'bg-indigo-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
                   }`}
                 >
-                  <FaPencil className="mx-auto" />
+                  <FaPen className="mx-auto" />
                 </button>
                 <button
                   onClick={() => setTool('eraser')}
@@ -457,6 +463,7 @@ export default function DraftDrawing({
                 <FaArrowLeft />
                 <span>{t('foreman.draft.undo') || 'Undo'}</span>
               </button>
+
               <button
                 onClick={handleRedo}
                 disabled={historyStepRef.current >= historyRef.current.length - 1}
@@ -465,6 +472,7 @@ export default function DraftDrawing({
                 <FaArrowRight />
                 <span>{t('foreman.draft.redo') || 'Redo'}</span>
               </button>
+
               <button
                 onClick={handleClear}
                 className="w-full px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center justify-center space-x-2"
@@ -472,6 +480,7 @@ export default function DraftDrawing({
                 <FaTrash />
                 <span>{t('foreman.draft.clear') || 'Clear'}</span>
               </button>
+
               <button
                 onClick={handleExport}
                 className="w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors flex items-center justify-center space-x-2"
@@ -520,7 +529,9 @@ export default function DraftDrawing({
                 className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <FaSave />
-                <span>{saving ? (t('foreman.draft.saving') || 'Saving...') : (t('foreman.draft.save') || 'Save')}</span>
+                <span>
+                  {saving ? (t('foreman.draft.saving') || 'Saving...') : (t('foreman.draft.save') || 'Save')}
+                </span>
               </button>
             </div>
           </div>

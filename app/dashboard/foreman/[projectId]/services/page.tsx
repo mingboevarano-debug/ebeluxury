@@ -91,20 +91,20 @@ export default function ProjectServicesPage() {
 
   const handleSaveServices = async () => {
     if (!project) return;
-    
+
     setSaving(true);
     setSaveSuccess(false);
     try {
       await updateProject(project.id, {
         selectedServices: selectedServices,
       });
-      
+
       // Update local project state
       setProject({
         ...project,
         selectedServices: selectedServices,
       });
-      
+
       setSaveSuccess(true);
       toast.success(t('foreman.saved'));
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -142,7 +142,7 @@ export default function ProjectServicesPage() {
 
   // Helper function to format translation with count
   const formatTranslation = (key: string, count?: number) => {
-    let translation = t(key);
+    let translation = t(key as any);
     if (count !== undefined) {
       translation = translation.replace(/{count}/g, count.toString());
     }
@@ -207,7 +207,7 @@ export default function ProjectServicesPage() {
                 {formatTranslation('foreman.out_of_services', constructionServices.length)}
               </p>
             </div>
-            
+
             <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-5 border-2 border-green-200 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-green-700 uppercase tracking-wide">
@@ -218,7 +218,7 @@ export default function ProjectServicesPage() {
               <p className="text-4xl font-bold text-green-800">$6</p>
               <p className="text-xs text-green-600 mt-1">{t('foreman.per_service')}</p>
             </div>
-            
+
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border-2 border-purple-200 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">
@@ -228,7 +228,7 @@ export default function ProjectServicesPage() {
               </div>
               <p className="text-4xl font-bold text-purple-800">${totalSelectedCost}</p>
               <p className="text-xs text-purple-600 mt-1">
-                {selectedServices.length > 0 
+                {selectedServices.length > 0
                   ? `${selectedServices.length} × $6 = $${totalSelectedCost}`
                   : t('foreman.no_services_selected')
                 }
@@ -241,15 +241,14 @@ export default function ProjectServicesPage() {
             <button
               onClick={handleSaveServices}
               disabled={saving || selectedServices.length === 0}
-              className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all transform ${
-                saving
+              className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all transform ${saving
                   ? 'bg-gray-400 cursor-not-allowed'
                   : saveSuccess
-                  ? 'bg-green-600 hover:bg-green-700'
-                  : selectedServices.length === 0
-                  ? 'bg-gray-300 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 hover:scale-[1.02] active:scale-[0.98]'
-              } text-white flex items-center justify-center space-x-3`}
+                    ? 'bg-green-600 hover:bg-green-700'
+                    : selectedServices.length === 0
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 hover:scale-[1.02] active:scale-[0.98]'
+                } text-white flex items-center justify-center space-x-3`}
             >
               {saving ? (
                 <>
@@ -281,7 +280,7 @@ export default function ProjectServicesPage() {
           {Object.entries(servicesByStage).map(([stage, services]) => {
             const stageSelectedServices = services.filter(s => selectedServices.includes(s.id));
             const stageTotal = stageSelectedServices.length * 6;
-            
+
             return (
               <div key={stage} className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
                 <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-4">
@@ -293,23 +292,20 @@ export default function ProjectServicesPage() {
                     return (
                       <div
                         key={service.id}
-                        className={`px-6 py-4 transition-all ${
-                          isSelected 
-                            ? 'bg-green-50 border-l-4 border-green-500 shadow-sm' 
+                        className={`px-6 py-4 transition-all ${isSelected
+                            ? 'bg-green-50 border-l-4 border-green-500 shadow-sm'
                             : 'hover:bg-gray-50'
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1 flex items-center space-x-4">
-                            <span className={`text-sm font-bold min-w-[50px] ${
-                              isSelected ? 'text-green-700' : 'text-indigo-600'
-                            }`}>
+                            <span className={`text-sm font-bold min-w-[50px] ${isSelected ? 'text-green-700' : 'text-indigo-600'
+                              }`}>
                               #{service.id}
                             </span>
                             <div className="flex-1">
-                              <p className={`font-medium ${
-                                isSelected ? 'text-green-900' : 'text-gray-900'
-                              }`}>
+                              <p className={`font-medium ${isSelected ? 'text-green-900' : 'text-gray-900'
+                                }`}>
                                 {getServiceName(service)}
                               </p>
                             </div>
@@ -326,11 +322,10 @@ export default function ProjectServicesPage() {
                             </div>
                             <button
                               onClick={() => handleToggleService(service.id)}
-                              className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl transition-all transform hover:scale-110 active:scale-95 shadow-md ${
-                                isSelected
+                              className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl transition-all transform hover:scale-110 active:scale-95 shadow-md ${isSelected
                                   ? 'bg-red-500 hover:bg-red-600 text-white'
                                   : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                              }`}
+                                }`}
                               title={isSelected ? t('foreman.remove_service') : t('foreman.add_service')}
                             >
                               {isSelected ? '−' : '+'}

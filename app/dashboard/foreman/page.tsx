@@ -254,6 +254,8 @@ export default function ForemanDashboard() {
     try {
       await createReport({
         projectId: selectedProject.id,
+        foremanId: selectedProject.foremanId,
+        foremanName: selectedProject.foremanName,
         description: reportDescription,
         photos,
         videos,
@@ -280,7 +282,10 @@ export default function ForemanDashboard() {
     try {
       await createWarning({
         projectId: selectedProject.id,
+        foremanId: selectedProject.foremanId,
+        foremanName: selectedProject.foremanName,
         message: warningMessage,
+        status: 'pending',
       });
 
       setShowWarningModal(false);

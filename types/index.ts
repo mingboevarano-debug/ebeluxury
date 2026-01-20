@@ -83,6 +83,7 @@ export interface Warning {
   foremanId: string;
   foremanName: string;
   message: string;
+  status: 'pending' | 'resolved';
   createdAt: Date;
 }
 

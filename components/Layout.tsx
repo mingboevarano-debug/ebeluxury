@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { getCurrentUser, signOut, subscribeToAuthChanges } from '@/lib/auth';
+import { signOut, subscribeToAuthChanges } from '@/lib/auth';
 import { User } from '@/types';
 import WarningBell from './WarningBell';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -21,6 +21,13 @@ export default function Layout({ children }: LayoutProps) {
   const [loading, setLoading] = useState(true);
   const { t } = useLanguage();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Escape hatch for strict typed i18n keys (prevents build failures)
+  const tt = (key: string, fallback?: string) => {
+    const value = (t as unknown as (k: string) => string)(key);
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+    return fallback ?? key;
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges((currentUser: User | null) => {
@@ -45,7 +52,7 @@ export default function Layout({ children }: LayoutProps) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-        <div className="text-xl">Loading...</div>
+        <div className="text-xl">{tt('common.loading', 'Loading...')}</div>
       </div>
     );
   }
@@ -53,16 +60,21 @@ export default function Layout({ children }: LayoutProps) {
   if (!user) return null;
 
   const navigation = [
-    { name: t('nav.dashboard'), href: `/dashboard/${user.role}` },
-    { name: t('nav.attendance'), href: '/dashboard/attendance' },
-    { name: t('nav.calendar'), href: '/dashboard/calendar' },
-    { name: t('nav.meetings'), href: '/dashboard/meetings' },
-    { name: t('nav.statistics'), href: '/dashboard/statistics' },
+    { name: tt('nav.dashboard', 'Dashboard'), href: `/dashboard/${user.role}` },
+    { name: tt('nav.attendance', 'Attendance'), href: '/dashboard/attendance' },
+    { name: tt('nav.calendar', 'Calendar'), href: '/dashboard/calendar' },
+    { name: tt('nav.meetings', 'Meetings'), href: '/dashboard/meetings' },
+    { name: tt('nav.statistics', 'Statistics'), href: '/dashboard/statistics' },
+
     // Only show accounting link for HR, Admin, and Director
-    ...(['hr', 'admin', 'director'].includes(user.role) ? [{ name: t('nav.accounting'), href: '/dashboard/accounting' }] : []),
+    ...(['hr', 'admin', 'director'].includes(user.role)
+      ? [{ name: tt('nav.accounting', 'Accounting'), href: '/dashboard/accounting' }]
+      : []),
+
     // Only show finance link for HR, Admin, and Director
-    ...(['hr', 'admin', 'director'].includes(user.role) ? [{ name: t('nav.finance') || 'Finance', href: '/dashboard/finance' }] : []),
-    // Add more links here when they exist, e.g., Projects, Contracts
+    ...(['hr', 'admin', 'director'].includes(user.role)
+      ? [{ name: tt('nav.finance', 'Finance'), href: '/dashboard/finance' }]
+      : []),
   ];
 
   return (
@@ -87,8 +99,9 @@ export default function Layout({ children }: LayoutProps) {
           {/* Sidebar Header */}
           <div className="h-16 flex items-center justify-between px-6 bg-gray-900 border-b border-gray-700">
             <h1 className="text-xl font-bold text-white tracking-wider">
-              {t('app.title')}
+              {tt('app.title', 'App')}
             </h1>
+
             <button
               className="lg:hidden text-gray-400 hover:text-white"
               onClick={() => setSidebarOpen(false)}
@@ -106,12 +119,13 @@ export default function Layout({ children }: LayoutProps) {
               const isActive = pathname === item.href;
               return (
                 <a
-                  key={item.name}
+                  key={item.href}
                   href={item.href}
-                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${isActive
-                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
-                    : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                    }`}
+                  className={`flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
+                    isActive
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/30'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`}
                 >
                   {item.name}
                 </a>
@@ -123,18 +137,21 @@ export default function Layout({ children }: LayoutProps) {
           <div className="p-4 border-t border-gray-700 bg-gray-800">
             <div className="flex items-center mb-4">
               <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center text-white font-bold">
-                {user.name.charAt(0).toUpperCase()}
+                {user.name?.charAt(0)?.toUpperCase?.() || 'U'}
               </div>
               <div className="ml-3">
                 <p className="text-sm font-medium text-white">{user.name}</p>
-                <p className="text-xs text-gray-400 capitalize">{t(`role.${user.role}` as any)}</p>
+                <p className="text-xs text-gray-400 capitalize">
+                  {tt(`role.${user.role}`, user.role)}
+                </p>
               </div>
             </div>
+
             <button
               onClick={handleSignOut}
               className="w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
             >
-              {t('signout')}
+              {tt('signout', 'Sign out')}
             </button>
           </div>
         </div>
@@ -162,11 +179,10 @@ export default function Layout({ children }: LayoutProps) {
 
         {/* Page Content */}
         <div className="flex-1 overflow-y-auto p-4 lg:p-8">
-          <div className="max-w-7xl mx-auto">
-            {children}
-          </div>
+          <div className="max-w-7xl mx-auto">{children}</div>
         </div>
       </main>
+
       <ToastContainer
         position="top-right"
         autoClose={3000}

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUsers, createUser, updateUser, deleteUser } from '@/lib/db';
+import { getUsers, updateUser, deleteUser } from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { createUser as createAuthUser } from '@/lib/auth';
 
