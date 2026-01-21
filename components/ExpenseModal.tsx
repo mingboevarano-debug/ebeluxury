@@ -102,19 +102,51 @@ export default function ExpenseModal({
                             <FaFolder className="text-red-600" />
                             <span>{t('finance.expense.to_project')}</span>
                         </label>
-                        <select
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300"
-                            value={expenseForm.projectId}
-                            onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
-                        >
-                            <option value="">{t('finance.expense.select_project')}</option>
-                            {projects.map(project => (
-                                <option key={project.id} value={project.id}>
-                                    {project.constructionName ? `[${project.constructionName}] ` : ''}
-                                    {project.clientName || t('finance.profit.unknown')} - {project.location || t('finance.profit.no_location')}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="relative">
+                            <select
+                                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
+                                value={expenseForm.projectId}
+                                onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
+                            >
+                                <option value="">{t('finance.expense.select_project')}</option>
+                                {projects.map(project => (
+                                    <option key={project.id} value={project.id}>
+                                        {project.constructionName ? `[${project.constructionName}] ` : ''}
+                                        {project.clientName || t('finance.profit.unknown')} - {project.location || t('finance.profit.no_location')}
+                                    </option>
+                                ))}
+                            </select>
+                            {/* Display selected project name for better visibility */}
+                            {expenseForm.projectId && (
+                                <div className="absolute top-0 left-0 right-0 bottom-0 flex items-center px-4 pointer-events-none text-gray-700 truncate">
+                                    <span className="truncate text-sm">
+                                        {(() => {
+                                            const selected = projects.find(p => p.id === expenseForm.projectId);
+                                            if (!selected) return '';
+                                            return `${selected.constructionName ? `[${selected.constructionName}] ` : ''}${selected.clientName || t('finance.profit.unknown')} - ${selected.location || t('finance.profit.no_location')}`;
+                                        })()}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                        {/* Show selected project details */}
+                        {expenseForm.projectId && (
+                            <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                                {(() => {
+                                    const selected = projects.find(p => p.id === expenseForm.projectId);
+                                    if (!selected) return null;
+                                    return (
+                                        <div className="text-sm text-gray-700 space-y-1">
+                                            <p><span className="font-semibold">{t('finance.profit.client')}:</span> {selected.clientName || '-'}</p>
+                                            <p><span className="font-semibold">{t('finance.profit.location')}:</span> {selected.location || '-'}</p>
+                                            {selected.constructionName && (
+                                                <p><span className="font-semibold">{t('finance.profit.construction')}:</span> {selected.constructionName}</p>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        )}
                     </div>
 
                     {/* Expense Name */}
