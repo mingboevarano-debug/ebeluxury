@@ -29,6 +29,8 @@ export interface Contract {
   passportId?: string;
   accommodationSquare?: number;
   selectedServices?: number[];
+  constructionName?: string;
+  doorPassword?: string;
 }
 
 export interface Project {
@@ -40,6 +42,7 @@ export interface Project {
   location?: string;    // Location from contract
   price?: number;       // Price from contract
   description: string;
+  constructionName?: string;
   employeeCount?: number;
   totalWorkers?: number;
   deadline: Date;
@@ -208,6 +211,7 @@ export interface Expense {
   projectId?: string;
   projectName?: string;
   name: string;
+  stage?: string;
   categoryId: string;
   categoryName: string;
   paymentMethod: PaymentMethod;
@@ -246,5 +250,11 @@ export interface OfficeWasteCategory {
   isActive: boolean;
   order: number;
   createdAt: Date;
+}
+
+export interface LocalizedStage {
+  en: string;
+  ru: string;
+  uz: string;
 }
 

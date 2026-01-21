@@ -3,7 +3,7 @@
 import React, { useEffect } from 'react';
 import { FaTimes, FaDollarSign, FaUser, FaCreditCard, FaMoneyBillWave, FaFolder, FaTag, FaComment } from 'react-icons/fa';
 import { formatNumberWithSpaces, parseFormattedNumber } from '@/lib/formatNumber';
-import { Expense, Project, FinanceCategory } from '@/types';
+import { Expense, Project, FinanceCategory, LocalizedStage } from '@/types';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface ExpenseModalProps {
@@ -15,6 +15,7 @@ interface ExpenseModalProps {
         projectId: string;
         categoryId: string;
         name: string;
+        stage: string;
         paymentMethod: 'cash' | 'card';
         amount: string;
         toWhom: string;
@@ -24,12 +25,14 @@ interface ExpenseModalProps {
         projectId: string;
         categoryId: string;
         name: string;
+        stage: string;
         paymentMethod: 'cash' | 'card';
         amount: string;
         toWhom: string;
         comment: string;
     }>>;
     projects: Project[];
+    stages: LocalizedStage[];
     expenseCategories: FinanceCategory[];
     submitting: boolean;
 }
@@ -42,10 +45,11 @@ export default function ExpenseModal({
     expenseForm,
     setExpenseForm,
     projects,
+    stages,
     expenseCategories,
     submitting
 }: ExpenseModalProps) {
-    const { t } = useLanguage();
+    const { t, locale } = useLanguage();
 
     useEffect(() => {
         if (isOpen) {
@@ -106,6 +110,7 @@ export default function ExpenseModal({
                             <option value="">{t('finance.expense.select_project')}</option>
                             {projects.map(project => (
                                 <option key={project.id} value={project.id}>
+                                    {project.constructionName ? `[${project.constructionName}] ` : ''}
                                     {project.clientName || t('finance.profit.unknown')} - {project.location || t('finance.profit.no_location')}
                                 </option>
                             ))}
@@ -143,6 +148,26 @@ export default function ExpenseModal({
                             <option value="">{t('finance.expense.select_category')}</option>
                             {expenseCategories.map(category => (
                                 <option key={category.id} value={category.id}>{category.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Stage Selection */}
+                    <div className="group">
+                        <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                            <FaFolder className="text-red-600" />
+                            <span>{t('finance.expense.stage')}</span>
+                        </label>
+                        <select
+                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300"
+                            value={expenseForm.stage}
+                            onChange={(e) => setExpenseForm({ ...expenseForm, stage: e.target.value })}
+                        >
+                            <option value="">{t('finance.expense.select_stage')}</option>
+                            {stages.map(stage => (
+                                <option key={stage.en} value={stage.en}>
+                                    {locale === 'uz' ? stage.uz : locale === 'ru' ? stage.ru : stage.en}
+                                </option>
                             ))}
                         </select>
                     </div>

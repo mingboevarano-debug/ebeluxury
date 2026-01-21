@@ -35,6 +35,7 @@ const SearchInput = ({ filterText, onFilter, onClear, placeholder }: any) => (
   </div>
 );
 
+
 export default function SellerDashboard() {
   const { t, locale } = useLanguage();
   const [contracts, setContracts] = useState<Contract[]>([]);
@@ -46,6 +47,8 @@ export default function SellerDashboard() {
     clientName: '',
     clientSurname: '',
     clientPhone: '',
+    constructionName: '',
+    doorPassword: '',
     location: '',
     price: '',
     deadline: '',
@@ -144,6 +147,8 @@ export default function SellerDashboard() {
         passportId: formData.passportId,
         accommodationSquare: formData.accommodationSquare ? parseFloat(formData.accommodationSquare) : undefined,
         selectedServices: formData.selectedServices,
+        constructionName: formData.constructionName,
+        doorPassword: formData.doorPassword,
       });
 
       setShowForm(false);
@@ -159,6 +164,8 @@ export default function SellerDashboard() {
         passportId: '',
         accommodationSquare: '',
         selectedServices: [],
+        constructionName: '',
+        doorPassword: '',
       });
       fetchContracts();
       toast.success('Contract created successfully');
@@ -171,7 +178,9 @@ export default function SellerDashboard() {
   const filteredItems = contracts.filter(
     item =>
       (item.clientName && item.clientName.toLowerCase().includes(filterText.toLowerCase())) ||
-      (item.clientSurname && item.clientSurname.toLowerCase().includes(filterText.toLowerCase()))
+      (item.clientSurname && item.clientSurname.toLowerCase().includes(filterText.toLowerCase())) ||
+      (item.constructionName && item.constructionName.toLowerCase().includes(filterText.toLowerCase())) ||
+      (item.location && item.location.toLowerCase().includes(filterText.toLowerCase()))
   );
 
   const getServiceName = (service: Service) => {
@@ -242,6 +251,21 @@ export default function SellerDashboard() {
       wrap: true,
       minWidth: '150px',
       width: '180px',
+    },
+    {
+      name: t('seller.construction_name'),
+      selector: row => row.constructionName || '',
+      sortable: true,
+      wrap: true,
+      minWidth: '150px',
+      width: '180px',
+    },
+    {
+      name: t('seller.door_password'),
+      selector: row => row.doorPassword || '',
+      sortable: true,
+      minWidth: '130px',
+      width: '150px',
     },
     {
       name: t('table.phone'),
@@ -502,6 +526,17 @@ export default function SellerDashboard() {
                         />
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('seller.construction_name')}</label>
+                        <input
+                          type="text"
+                          required
+                          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
+                          value={formData.constructionName}
+                          onChange={(e) => setFormData({ ...formData, constructionName: e.target.value })}
+                          placeholder={t('seller.construction_name')}
+                        />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">{t('seller.location')}</label>
                         <input
                           type="text"
@@ -510,6 +545,16 @@ export default function SellerDashboard() {
                           value={formData.location}
                           onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                           placeholder={t('seller.location')}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('seller.door_password')}</label>
+                        <input
+                          type="text"
+                          className="w-full px-4 py-3 rounded-lg border-2 border-gray-200 bg-white text-gray-900 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
+                          value={formData.doorPassword}
+                          onChange={(e) => setFormData({ ...formData, doorPassword: e.target.value })}
+                          placeholder={t('seller.door_password')}
                         />
                       </div>
                     </div>

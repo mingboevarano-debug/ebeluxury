@@ -117,6 +117,7 @@ export default function ForemanDashboard() {
         foremanName: user.name,
         clientName: `${contract.clientName} ${contract.clientSurname}`, // Store client name
         location: contract.location, // Store location
+        constructionName: contract.constructionName, // Store construction name
         price: contract.price, // Store price
         status: 'active',
         deadline: contract.deadline,

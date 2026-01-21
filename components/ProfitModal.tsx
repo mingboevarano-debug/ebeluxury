@@ -104,6 +104,7 @@ export default function ProfitModal({
               <option value="">{t('finance.profit.select_project')}</option>
               {projects.map(project => (
                 <option key={project.id} value={project.id}>
+                  {project.constructionName ? `[${project.constructionName}] ` : ''}
                   {project.clientName || t('finance.profit.unknown')} - {project.location || t('finance.profit.no_location')}
                 </option>
               ))}
@@ -140,8 +141,8 @@ export default function ProfitModal({
                 type="button"
                 onClick={() => setProfitForm({ ...profitForm, paymentMethod: 'cash' })}
                 className={`flex items-center justify-center space-x-2 px-4 py-3 rounded-xl border-2 transition-all duration-200 ${profitForm.paymentMethod === 'cash'
-                    ? 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                  ? 'border-green-500 bg-green-50 text-green-700'
+                  : 'border-gray-200 hover:border-gray-300 text-gray-700'
                   }`}
               >
                 <FaMoneyBillWave className="text-lg" />
@@ -151,8 +152,8 @@ export default function ProfitModal({
                 type="button"
                 onClick={() => setProfitForm({ ...profitForm, paymentMethod: 'card' })}
                 className={`flex items-center justify-center space-x-2 px-4 py-3 rounded-xl border-2 transition-all duration-200 ${profitForm.paymentMethod === 'card'
-                    ? 'border-green-500 bg-green-50 text-green-700'
-                    : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                  ? 'border-green-500 bg-green-50 text-green-700'
+                  : 'border-gray-200 hover:border-gray-300 text-gray-700'
                   }`}
               >
                 <FaCreditCard className="text-lg" />

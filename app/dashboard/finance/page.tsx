@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory } from '@/types';
+import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory, LocalizedStage } from '@/types';
 import {
   getProfits,
   getExpenses,
@@ -17,6 +17,7 @@ import {
   deleteAllProfits,
   deleteAllExpenses,
   getAllProjects,
+  getContracts,
   createFinanceCategory,
   updateFinanceCategory,
   deleteFinanceCategory,
@@ -27,12 +28,13 @@ import {
   getOfficeWasteCategories,
   createOfficeWasteCategory,
   updateOfficeWasteCategory,
-  deleteOfficeWasteCategory
+  deleteOfficeWasteCategory,
+  getServices
 } from '@/lib/db';
 import { subscribeToAuthChanges, getCurrentUser } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
-import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder } from 'react-icons/fa';
 import * as XLSX from 'xlsx';
 import ProfitModal from '@/components/ProfitModal';
 import ExpenseModal from '@/components/ExpenseModal';
@@ -47,7 +49,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function FinanceDashboard() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [activeTab, setActiveTab] = useState<'profit' | 'expense' | 'categories' | 'office_waste' | 'office_waste_categories' | 'statistics'>('profit');
   const [profits, setProfits] = useState<Profit[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -55,6 +57,7 @@ export default function FinanceDashboard() {
   const [officeWaste, setOfficeWaste] = useState<OfficeWaste[]>([]);
   const [officeWasteCategories, setOfficeWasteCategories] = useState<OfficeWasteCategory[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [stages, setStages] = useState<LocalizedStage[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -78,6 +81,7 @@ export default function FinanceDashboard() {
     projectId: '',
     categoryId: '',
     name: '',
+    stage: '',
     paymentMethod: 'cash' as 'cash' | 'card',
     amount: '',
     toWhom: '',
@@ -154,18 +158,64 @@ export default function FinanceDashboard() {
 
   const fetchData = async () => {
     try {
-      const [profitsData, expensesData, categoriesData, projectsData, officeWasteData, officeWasteCategoriesData] = await Promise.all([
+      const [
+        allProfits,
+        allExpenses,
+        allProjects,
+        allContracts,
+        categoriesData,
+        officeWasteData,
+        officeWasteCategoriesData,
+        servicesData
+      ] = await Promise.all([
         getProfits(),
         getExpenses(),
-        getFinanceCategories(),
         getAllProjects(),
+        getContracts(),
+        getFinanceCategories(),
         getOfficeWaste(),
-        getOfficeWasteCategories()
+        getOfficeWasteCategories(),
+        getServices()
       ]);
-      setProfits(profitsData);
-      setExpenses(expensesData);
+
+      // Extract unique stages from services with all translations
+      const stageMap = new Map<string, LocalizedStage>();
+      servicesData.forEach(s => {
+        if (s.stage && !stageMap.has(s.stage)) {
+          stageMap.set(s.stage, {
+            en: s.stage,
+            ru: s.stageRu || s.stage,
+            uz: s.stageUz || s.stage
+          });
+        }
+      });
+      const uniqueStages = Array.from(stageMap.values()).sort((a, b) => a.en.localeCompare(b.en));
+      setStages(uniqueStages);
+
+      // Merge contracts and projects for selection
+      // We want to show all contracts. If a contract has a project, we can link them.
+      // For the dropdown, we'll map contracts to a Project-like structure.
+      const formattedSites: Project[] = allContracts.map(contract => {
+        return {
+          id: contract.id, // Use contract ID as the primary selection ID
+          contractId: contract.id,
+          foremanId: contract.foremanId || '',
+          foremanName: '', // Not strictly needed for selection
+          clientName: `${contract.clientName} ${contract.clientSurname}`.trim(),
+          location: contract.location,
+          constructionName: contract.constructionName,
+          price: contract.price,
+          description: contract.description,
+          deadline: contract.deadline,
+          status: contract.status === 'pending' ? 'active' : 'active', // Compatibility
+          createdAt: contract.createdAt
+        } as Project;
+      });
+
+      setProfits(allProfits);
+      setExpenses(allExpenses);
       setCategories(categoriesData);
-      setProjects(projectsData);
+      setProjects(formattedSites);
       setOfficeWaste(officeWasteData);
       setOfficeWasteCategories(officeWasteCategoriesData);
 
@@ -264,7 +314,11 @@ export default function FinanceDashboard() {
 
       const profitData = {
         projectId: profitForm.projectId || undefined,
-        projectName: project ? `${project.clientName || ''} - ${project.location || ''}`.trim() : undefined,
+        projectName: project ? (
+          project.constructionName
+            ? `[${project.constructionName}] ${project.clientName} - ${project.location}`
+            : `${project.clientName} - ${project.location}`
+        ).trim() : undefined,
         name: '',
         categoryId: profitForm.categoryId,
         categoryName: category?.name || '',
@@ -323,6 +377,7 @@ export default function FinanceDashboard() {
         projectId: expense.projectId || '',
         categoryId: expense.categoryId,
         name: expense.name || '',
+        stage: expense.stage || '',
         paymentMethod: expense.paymentMethod,
         amount: formatNumberWithSpaces(expense.amount.toString()),
         toWhom: expense.toWhom,
@@ -334,6 +389,7 @@ export default function FinanceDashboard() {
         projectId: '',
         categoryId: '',
         name: '',
+        stage: '',
         paymentMethod: 'cash',
         amount: '',
         toWhom: '',
@@ -375,10 +431,15 @@ export default function FinanceDashboard() {
 
       const expenseData = {
         projectId: expenseForm.projectId || undefined,
-        projectName: project ? `${project.clientName || ''} - ${project.location || ''}`.trim() : undefined,
+        projectName: project ? (
+          project.constructionName
+            ? `[${project.constructionName}] ${project.clientName} - ${project.location}`
+            : `${project.clientName} - ${project.location}`
+        ).trim() : undefined,
         categoryId: expenseForm.categoryId,
         categoryName: category?.name || '',
         name: expenseForm.name.trim(),
+        stage: expenseForm.stage || undefined,
         paymentMethod: expenseForm.paymentMethod,
         amount,
         toWhom: expenseForm.toWhom.trim(),
@@ -401,6 +462,7 @@ export default function FinanceDashboard() {
         projectId: '',
         categoryId: '',
         name: '',
+        stage: '',
         paymentMethod: 'cash',
         amount: '',
         toWhom: '',
@@ -897,6 +959,7 @@ export default function FinanceDashboard() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.project')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.category')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.to_whom')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.stage')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.payment_method')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.amount')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.comment')}</th>
@@ -922,6 +985,16 @@ export default function FinanceDashboard() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.categoryName}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{expense.toWhom}</td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {(() => {
+                              if (!expense.stage) return '-';
+                              const stageObj = stages.find(s => s.en === expense.stage);
+                              if (stageObj) {
+                                return locale === 'uz' ? stageObj.uz : locale === 'ru' ? stageObj.ru : stageObj.en;
+                              }
+                              return expense.stage;
+                            })()}
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                             {t(`finance.payment_method.${expense.paymentMethod}`)}
                           </td>
@@ -1014,7 +1087,6 @@ export default function FinanceDashboard() {
         />
 
         {/* Expense Modal */}
-        {/* Expense Modal */}
         <ExpenseModal
           isOpen={isExpenseModalOpen}
           onClose={() => setIsExpenseModalOpen(false)}
@@ -1023,6 +1095,7 @@ export default function FinanceDashboard() {
           expenseForm={expenseForm}
           setExpenseForm={setExpenseForm}
           projects={projects}
+          stages={stages}
           expenseCategories={expenseCategories}
           submitting={submitting}
         />
