@@ -215,10 +215,13 @@ export interface Expense {
   categoryId: string;
   categoryName: string;
   paymentMethod: PaymentMethod;
-  amount: number;
+  amount: number; // Total amount (Jammi suma)
+  unitPrice?: number; // Unit price (Бирлик нархи) from Excel import
   quantity?: number; // Optional quantity from Excel import
   toWhom: string; // To whom given
   comment?: string;
+  employees?: string[]; // Array of employee IDs for salary expenses
+  employeeNames?: string[]; // Array of employee names for display
   createdAt: Date;
   createdBy: string;
   createdByName: string;

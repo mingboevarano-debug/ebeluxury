@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   FaTimes,
   FaDollarSign,
@@ -12,8 +12,9 @@ import {
   FaComment,
 } from 'react-icons/fa';
 import { formatNumberWithSpaces, parseFormattedNumber } from '@/lib/formatNumber';
-import { Expense, Project, FinanceCategory, LocalizedStage } from '@/types';
+import { Expense, Project, FinanceCategory, LocalizedStage, User } from '@/types';
 import { useLanguage } from '@/contexts/LanguageContext';
+import EmployeeSelectionModal from './EmployeeSelectionModal';
 
 interface ExpenseModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ interface ExpenseModalProps {
     amount: string;
     toWhom: string;
     comment: string;
+    selectedEmployeeIds?: string[];
   };
   setExpenseForm: React.Dispatch<
     React.SetStateAction<{
@@ -40,12 +42,17 @@ interface ExpenseModalProps {
       amount: string;
       toWhom: string;
       comment: string;
+      selectedEmployeeIds?: string[];
     }>
   >;
   projects: Project[];
   stages: LocalizedStage[];
   expenseCategories: FinanceCategory[];
+  users: User[];
   submitting: boolean;
+  selectedEmployeeIds?: string[];
+  onEmployeeSelectionChange?: (employeeIds: string[]) => void;
+  disableProjectSelection?: boolean; // Disable project selection (e.g., when on contract page)
 }
 
 export default function ExpenseModal({
@@ -58,9 +65,28 @@ export default function ExpenseModal({
   projects,
   stages,
   expenseCategories,
+  users,
   submitting,
+  selectedEmployeeIds = [],
+  onEmployeeSelectionChange,
+  disableProjectSelection = false,
 }: ExpenseModalProps) {
   const { t, locale } = useLanguage();
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+
+  // Debug: Log categories when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      console.log('ExpenseModal opened with categories:', expenseCategories.length);
+      console.log('Category details:', expenseCategories);
+    }
+  }, [isOpen, expenseCategories]);
+
+  // Check if selected category is salary-related (case-insensitive and flexible matching)
+  const selectedCategory = expenseCategories.find(c => c.id === expenseForm.categoryId);
+  const categoryNameLower = selectedCategory?.name?.toLowerCase() || '';
+  const isSalaryCategory = (categoryNameLower.includes('xodimlar') || categoryNameLower.includes('xodimlarni')) && 
+                           categoryNameLower.includes('maoshi');
 
   /**
    * FIX:
@@ -84,6 +110,13 @@ export default function ExpenseModal({
       document.body.style.overflow = 'unset';
     };
   }, [isOpen]);
+
+  // Debug: Log when category changes
+  useEffect(() => {
+    if (expenseForm.categoryId && selectedCategory) {
+      console.log('Selected category:', selectedCategory.name, 'isSalaryCategory:', isSalaryCategory);
+    }
+  }, [expenseForm.categoryId, selectedCategory, isSalaryCategory]);
 
   if (!isOpen) return null;
 
@@ -119,73 +152,108 @@ export default function ExpenseModal({
       {/* Form Content */}
       <form onSubmit={onSubmit} className="p-6 max-w-4xl mx-auto">
         <div className="space-y-6">
-          {/* Project Selection */}
-          <div className="group">
-            <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
-              <FaFolder className="text-red-600" />
-              <span>{t('finance.expense.to_project')}</span>
-            </label>
-            <div className="relative">
+          {/* Project Selection - Optional */}
+          {!disableProjectSelection ? (
+            <div className="group">
+              <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                <FaFolder className="text-red-600" />
+                <span>{t('finance.expense.to_project')}</span>
+              </label>
               <select
                 className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
                 value={expenseForm.projectId}
                 onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
               >
-                <option value="">{t('finance.expense.select_project')}</option>
-                {projects.map((project) => (
+              <option value="">{t('finance.expense.select_project')}</option>
+              {projects.map((project) => {
+                // Format project display name properly
+                const parts = [];
+                if (project.constructionName) {
+                  parts.push(`[${project.constructionName}]`);
+                }
+                if (project.clientName) {
+                  parts.push(project.clientName);
+                }
+                if (project.location) {
+                  parts.push(project.location);
+                }
+                const displayName = parts.length > 0 ? parts.join(' - ') : t('finance.profit.unknown');
+                
+                return (
                   <option key={project.id} value={project.id}>
-                    {project.constructionName ? `[${project.constructionName}] ` : ''}
-                    {project.clientName || t('finance.profit.unknown')} -{' '}
-                    {project.location || t('finance.profit.no_location')}
+                    {displayName}
                   </option>
-                ))}
-              </select>
+                );
+              })}
+            </select>
 
-              {/* Display selected project name for better visibility */}
-              {expenseForm.projectId && (
-                <div className="absolute top-0 left-0 right-0 bottom-0 flex items-center px-4 pointer-events-none text-gray-700 truncate">
-                  <span className="truncate text-sm">
-                    {(() => {
-                      const selected = projects.find((p) => p.id === expenseForm.projectId);
-                      if (!selected) return '';
-                      return `${selected.constructionName ? `[${selected.constructionName}] ` : ''}${
-                        selected.clientName || t('finance.profit.unknown')
-                      } - ${selected.location || t('finance.profit.no_location')}`;
-                    })()}
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* Show selected project details in a clean format */}
+            {expenseForm.projectId && (() => {
+              const selected = projects.find((p) => p.id === expenseForm.projectId);
+              if (!selected) return null;
 
-            {/* Show selected project details */}
-            {expenseForm.projectId && (
-              <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
-                {(() => {
-                  const selected = projects.find((p) => p.id === expenseForm.projectId);
-                  if (!selected) return null;
-
-                  return (
-                    <div className="text-sm text-gray-700 space-y-1">
+              return (
+                <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                  <div className="text-sm text-gray-700 space-y-1">
+                    {selected.clientName && (
                       <p>
                         <span className="font-semibold">{tUnsafe('finance.profit.client')}:</span>{' '}
-                        {selected.clientName || '-'}
+                        {selected.clientName}
                       </p>
+                    )}
+                    {selected.location && (
                       <p>
                         <span className="font-semibold">{tUnsafe('finance.profit.location')}:</span>{' '}
-                        {selected.location || '-'}
+                        {selected.location}
                       </p>
-                      {selected.constructionName && (
-                        <p>
-                          <span className="font-semibold">{tUnsafe('finance.profit.construction')}:</span>{' '}
-                          {selected.constructionName}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })()}
+                    )}
+                    {selected.constructionName && (
+                      <p>
+                        <span className="font-semibold">{tUnsafe('finance.profit.construction')}:</span>{' '}
+                        {selected.constructionName}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+            </div>
+          ) : expenseForm.projectId && (() => {
+            // Show contract info when project selection is disabled
+            const selected = projects.find((p) => p.id === expenseForm.projectId);
+            if (!selected) return null;
+
+            return (
+              <div className="group">
+                <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                  <FaFolder className="text-red-600" />
+                  <span>{t('finance.expense.to_project')}</span>
+                </label>
+                <div className="p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                  <div className="text-sm text-gray-700 space-y-1">
+                    {selected.clientName && (
+                      <p>
+                        <span className="font-semibold">{tUnsafe('finance.profit.client')}:</span>{' '}
+                        {selected.clientName}
+                      </p>
+                    )}
+                    {selected.location && (
+                      <p>
+                        <span className="font-semibold">{tUnsafe('finance.profit.location')}:</span>{' '}
+                        {selected.location}
+                      </p>
+                    )}
+                    {selected.constructionName && (
+                      <p>
+                        <span className="font-semibold">{tUnsafe('finance.profit.construction')}:</span>{' '}
+                        {selected.constructionName}
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+            );
+          })()}
 
           {/* Expense Name */}
           <div className="group">
@@ -213,33 +281,86 @@ export default function ExpenseModal({
                 {t('finance.profit.category')} <span className="text-red-500">*</span>
               </span>
             </label>
-            <select
-              required
-              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300"
-              value={expenseForm.categoryId}
-              onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
-            >
-              <option value="">{t('finance.expense.select_category')}</option>
-              {expenseCategories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+            {expenseCategories.length === 0 ? (
+              <div className="w-full px-4 py-3 border-2 border-yellow-300 rounded-xl bg-yellow-50">
+                <p className="text-sm text-yellow-800">
+                  {t('finance.no_categories_available') || 'No expense categories available. Please create categories first.'}
+                </p>
+              </div>
+            ) : (
+              <select
+                required
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
+                value={expenseForm.categoryId}
+                onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
+              >
+                <option value="">{t('finance.expense.select_category')}</option>
+                {expenseCategories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
-          {/* Stage Selection */}
+          {/* Employee Selection - Only show for "Xodimlar maoshi" category */}
+          {isSalaryCategory && (
+            <div className="group">
+              <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                <FaUser className="text-red-600" />
+                <span>
+                  {t('finance.expense.select_employees') || 'Select Employees'} <span className="text-red-500">*</span>
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setIsEmployeeModalOpen(true)}
+                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 text-left flex items-center justify-between"
+              >
+                <span className={selectedEmployeeIds.length > 0 ? 'text-gray-900' : 'text-gray-500'}>
+                  {selectedEmployeeIds.length > 0
+                    ? `${selectedEmployeeIds.length} ${t('finance.expense.employees_selected') || 'employees selected'}`
+                    : t('finance.expense.click_to_select_employees') || 'Click to select employees'}
+                </span>
+                <FaUser className="text-gray-400" />
+              </button>
+              {selectedEmployeeIds.length > 0 && (
+                <div className="mt-2 p-3 bg-red-50 rounded-lg border-l-4 border-red-500">
+                  <p className="text-sm font-semibold text-gray-700 mb-2">
+                    {t('finance.expense.selected_employees') || 'Selected Employees'}:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {users
+                      .filter(u => selectedEmployeeIds.includes(u.id))
+                      .map(employee => (
+                        <span
+                          key={employee.id}
+                          className="px-3 py-1 bg-white rounded-lg border border-red-200 text-sm text-gray-700"
+                        >
+                          {employee.name}
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Stage Selection - Optional */}
           <div className="group">
             <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
               <FaFolder className="text-red-600" />
-              <span>{t('finance.expense.stage')}</span>
+              <span>
+                {t('finance.expense.stage')} <span className="text-gray-500 text-xs font-normal">({t('finance.optional') || 'Optional'})</span>
+              </span>
             </label>
             <select
               className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300"
               value={expenseForm.stage}
               onChange={(e) => setExpenseForm({ ...expenseForm, stage: e.target.value })}
             >
-              <option value="">{t('finance.expense.select_stage')}</option>
+              <option value="">{t('finance.expense.select_stage')} ({t('finance.optional') || 'Optional'})</option>
               {stages.map((stage) => (
                 <option key={stage.en} value={stage.en}>
                   {locale === 'uz' ? stage.uz : locale === 'ru' ? stage.ru : stage.en}
@@ -388,6 +509,19 @@ export default function ExpenseModal({
           </button>
         </div>
       </form>
+
+      {/* Employee Selection Modal */}
+      <EmployeeSelectionModal
+        isOpen={isEmployeeModalOpen}
+        onClose={() => setIsEmployeeModalOpen(false)}
+        onConfirm={(selectedEmployees) => {
+          if (onEmployeeSelectionChange) {
+            onEmployeeSelectionChange(selectedEmployees.map(e => e.id));
+          }
+        }}
+        employees={users}
+        selectedEmployeeIds={selectedEmployeeIds}
+      />
     </div>
   );
 }

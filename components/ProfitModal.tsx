@@ -102,12 +102,26 @@ export default function ProfitModal({
               onChange={(e) => setProfitForm({ ...profitForm, projectId: e.target.value })}
             >
               <option value="">{t('finance.profit.select_project')}</option>
-              {projects.map(project => (
-                <option key={project.id} value={project.id}>
-                  {project.constructionName ? `[${project.constructionName}] ` : ''}
-                  {project.clientName || t('finance.profit.unknown')} - {project.location || t('finance.profit.no_location')}
-                </option>
-              ))}
+              {projects.map(project => {
+                // Format project display name properly
+                const parts = [];
+                if (project.constructionName) {
+                  parts.push(`[${project.constructionName}]`);
+                }
+                if (project.clientName) {
+                  parts.push(project.clientName);
+                }
+                if (project.location) {
+                  parts.push(project.location);
+                }
+                const displayName = parts.length > 0 ? parts.join(' - ') : t('finance.profit.unknown');
+                
+                return (
+                  <option key={project.id} value={project.id}>
+                    {displayName}
+                  </option>
+                );
+              })}
             </select>
           </div>
 

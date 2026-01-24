@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory, LocalizedStage } from '@/types';
+import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory, LocalizedStage, Contract } from '@/types';
 import {
   getProfits,
   getExpenses,
@@ -29,13 +29,16 @@ import {
   createOfficeWasteCategory,
   updateOfficeWasteCategory,
   deleteOfficeWasteCategory,
-  getServices
+  getServices,
+  getUsers
 } from '@/lib/db';
 import { subscribeToAuthChanges, getCurrentUser } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
-import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder, FaDownload } from 'react-icons/fa';
 import * as XLSX from 'xlsx';
+import { collection, doc, setDoc, Timestamp } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import ProfitModal from '@/components/ProfitModal';
 import ExpenseModal from '@/components/ExpenseModal';
 import CategoryManagement from '@/components/CategoryManagement';
@@ -50,14 +53,16 @@ import { useLanguage } from '@/contexts/LanguageContext';
 export default function FinanceDashboard() {
   const router = useRouter();
   const { t, locale } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'profit' | 'expense' | 'categories' | 'office_waste' | 'office_waste_categories' | 'statistics'>('profit');
+  const [activeTab, setActiveTab] = useState<'profit' | 'expense' | 'categories' | 'office_waste' | 'office_waste_categories' | 'statistics' | 'contracts'>('profit');
   const [profits, setProfits] = useState<Profit[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
   const [officeWaste, setOfficeWaste] = useState<OfficeWaste[]>([]);
   const [officeWasteCategories, setOfficeWasteCategories] = useState<OfficeWasteCategory[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [stages, setStages] = useState<LocalizedStage[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -85,7 +90,8 @@ export default function FinanceDashboard() {
     paymentMethod: 'cash' as 'cash' | 'card',
     amount: '',
     toWhom: '',
-    comment: ''
+    comment: '',
+    selectedEmployeeIds: [] as string[]
   });
 
   // Category Modal State
@@ -166,7 +172,8 @@ export default function FinanceDashboard() {
         categoriesData,
         officeWasteData,
         officeWasteCategoriesData,
-        servicesData
+        servicesData,
+        allUsers
       ] = await Promise.all([
         getProfits(),
         getExpenses(),
@@ -175,7 +182,8 @@ export default function FinanceDashboard() {
         getFinanceCategories(),
         getOfficeWaste(),
         getOfficeWasteCategories(),
-        getServices()
+        getServices(),
+        getUsers()
       ]);
 
       // Extract unique stages from services with all translations
@@ -216,8 +224,11 @@ export default function FinanceDashboard() {
       setExpenses(allExpenses);
       setCategories(categoriesData);
       setProjects(formattedSites);
+      setContracts(allContracts);
       setOfficeWaste(officeWasteData);
       setOfficeWasteCategories(officeWasteCategoriesData);
+      // Filter out admin and director from users list
+      setUsers(allUsers.filter(u => u.role !== 'admin' && u.role !== 'director'));
 
       // Set default import category to "Materialga harajat" if it exists
       const materialCategory = categoriesData.find(c => c.type === 'expense' && (c.name === 'Materialga harajat' || c.name === 'Materialga xarajat'));
@@ -314,11 +325,20 @@ export default function FinanceDashboard() {
 
       const profitData = {
         projectId: profitForm.projectId || undefined,
-        projectName: project ? (
-          project.constructionName
-            ? `[${project.constructionName}] ${project.clientName} - ${project.location}`
-            : `${project.clientName} - ${project.location}`
-        ).trim() : undefined,
+        projectName: project ? (() => {
+          // Format project name properly to avoid concatenation mess
+          const parts = [];
+          if (project.constructionName) {
+            parts.push(`[${project.constructionName}]`);
+          }
+          if (project.clientName) {
+            parts.push(project.clientName);
+          }
+          if (project.location) {
+            parts.push(project.location);
+          }
+          return parts.length > 0 ? parts.join(' - ') : undefined;
+        })() : undefined,
         name: '',
         categoryId: profitForm.categoryId,
         categoryName: category?.name || '',
@@ -381,7 +401,8 @@ export default function FinanceDashboard() {
         paymentMethod: expense.paymentMethod,
         amount: formatNumberWithSpaces(expense.amount.toString()),
         toWhom: expense.toWhom,
-        comment: expense.comment || ''
+        comment: expense.comment || '',
+        selectedEmployeeIds: expense.employees || []
       });
     } else {
       setEditingExpense(null);
@@ -393,7 +414,8 @@ export default function FinanceDashboard() {
         paymentMethod: 'cash',
         amount: '',
         toWhom: '',
-        comment: ''
+        comment: '',
+        selectedEmployeeIds: []
       });
     }
     setIsExpenseModalOpen(true);
@@ -429,13 +451,27 @@ export default function FinanceDashboard() {
       const category = categories.find(c => c.id === expenseForm.categoryId);
       const project = expenseForm.projectId ? projects.find(p => p.id === expenseForm.projectId) : null;
 
+      // Get selected employees if any
+      const selectedEmployees = expenseForm.selectedEmployeeIds.length > 0
+        ? users.filter(u => expenseForm.selectedEmployeeIds.includes(u.id))
+        : [];
+
       const expenseData = {
         projectId: expenseForm.projectId || undefined,
-        projectName: project ? (
-          project.constructionName
-            ? `[${project.constructionName}] ${project.clientName} - ${project.location}`
-            : `${project.clientName} - ${project.location}`
-        ).trim() : undefined,
+        projectName: project ? (() => {
+          // Format project name properly to avoid concatenation mess
+          const parts = [];
+          if (project.constructionName) {
+            parts.push(`[${project.constructionName}]`);
+          }
+          if (project.clientName) {
+            parts.push(project.clientName);
+          }
+          if (project.location) {
+            parts.push(project.location);
+          }
+          return parts.length > 0 ? parts.join(' - ') : undefined;
+        })() : undefined,
         categoryId: expenseForm.categoryId,
         categoryName: category?.name || '',
         name: expenseForm.name.trim(),
@@ -445,7 +481,11 @@ export default function FinanceDashboard() {
         toWhom: expenseForm.toWhom.trim(),
         createdBy: user.id,
         createdByName: user.name,
-        ...(expenseForm.comment.trim() && { comment: expenseForm.comment.trim() })
+        ...(expenseForm.comment.trim() && { comment: expenseForm.comment.trim() }),
+        ...(selectedEmployees.length > 0 && {
+          employees: selectedEmployees.map(e => e.id),
+          employeeNames: selectedEmployees.map(e => e.name)
+        })
       };
 
       if (editingExpense) {
@@ -466,7 +506,8 @@ export default function FinanceDashboard() {
         paymentMethod: 'cash',
         amount: '',
         toWhom: '',
-        comment: ''
+        comment: '',
+        selectedEmployeeIds: []
       });
     } catch (error: any) {
       console.error('Error saving expense:', error);
@@ -578,6 +619,55 @@ export default function FinanceDashboard() {
     }
   };
 
+  // Excel Template Download Handler
+  const handleDownloadTemplate = () => {
+    try {
+      // Create header row based on user's requirements:
+      // A (0): Sana (Date)
+      // B (1): Nomi (Name)
+      // C (2): Olingan joyi (Source/Place)
+      // D (3): Бирлик нархи (Unit price)
+      // E (4): Миқдор (Quantity)
+      // F (5): Жамми сума (Total amount)
+      // G (6): Лойиҳа (Project)
+      
+      const headers = [
+        'Sana',           // A - Date
+        'Nomi',           // B - Name
+        'Olingan joyi',   // C - Source/Place
+        'Бирлик нархи',   // D - Unit price
+        'Миқдор',         // E - Quantity
+        'Жамми сума',     // F - Total amount
+        'Лойиҳа'          // G - Project
+      ];
+
+      // Create worksheet with only headers (no data rows)
+      const ws = XLSX.utils.aoa_to_sheet([headers]);
+      
+      // Set column widths for better readability
+      ws['!cols'] = [
+        { wch: 12 },  // A - Date
+        { wch: 20 },  // B - Name
+        { wch: 20 },  // C - Source/Place
+        { wch: 15 },  // D - Unit price
+        { wch: 10 },  // E - Quantity
+        { wch: 15 },  // F - Total amount
+        { wch: 25 }   // G - Project
+      ];
+
+      // Create workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
+
+      // Download the file
+      XLSX.writeFile(wb, 'expense_template.xlsx');
+      toast.success(t('finance.template_downloaded') || 'Template downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading template:', error);
+      toast.error(t('finance.template_download_error') || 'Failed to download template');
+    }
+  };
+
   // Excel Import Handler
   const handleImportExcel = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -609,51 +699,100 @@ export default function FinanceDashboard() {
         return;
       }
 
-      for (const row of rows) {
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
         try {
-          // Column mapping based on user's Excel:
-          // A (0): Сана (Date)
-          // B (1): Олинган жойи (toWhom)
-          // C (2): Харажат номи (item name - use as categoryName)
-          // D (3): Миқдор (quantity - optional)
-          // E (4): Бирлик нархи (unit price - amount)
-          // K (10): Лойиҳа (project/description - use as comment)
+          // Column mapping based on new Excel template:
+          // A (0): Sana (Date)
+          // B (1): Nomi (Name)
+          // C (2): Olingan joyi (Source -> toWhom)
+          // D (3): Бирлик нархи (Unit price -> unitPrice)
+          // E (4): Миқдор (Quantity -> quantity)
+          // F (5): Жамми сума (Total amount -> amount)
+          // G (6): Лойиҳа (Project -> comment)
 
           const dateValue = row[0];
-          const toWhom = row[1];
-          const itemName = row[2];
-          const quantity = row[3];
-          const amount = row[4];
-          const projectDescription = row[10];
+          const name = row[1];
+          const source = row[2]; // Olingan joyi -> toWhom
+          const unitPrice = row[3]; // Бирлик нархи
+          const quantity = row[4]; // Миқдор
+          const totalAmount = row[5]; // Жамми сума
+          const project = row[6]; // Лойиҳа -> comment
 
-          // Skip empty rows
-          if (!dateValue || !amount) continue;
+          // Skip empty rows - require at least name and total amount
+          if (!name || !totalAmount) {
+            console.log(`Skipping row ${rowIndex + 2}: missing name or total amount`);
+            continue;
+          }
 
-          // Parse amount
-          const parsedAmount = typeof amount === 'number' ? amount : parseFloat(String(amount).replace(/\s/g, ''));
+          // Parse total amount (Жамми сума)
+          const parsedAmount = typeof totalAmount === 'number' 
+            ? totalAmount 
+            : parseFloat(String(totalAmount).replace(/\s/g, ''));
           if (isNaN(parsedAmount) || parsedAmount <= 0) continue;
 
-          // Parse quantity if present
-          const parsedQuantity = quantity ? (typeof quantity === 'number' ? quantity : parseFloat(String(quantity))) : undefined;
+          // Parse unit price (Бирлик нархи) if present
+          const parsedUnitPrice = unitPrice 
+            ? (typeof unitPrice === 'number' 
+                ? unitPrice 
+                : parseFloat(String(unitPrice).replace(/\s/g, '')))
+            : undefined;
+
+          // Parse quantity (Миқдор) if present
+          const parsedQuantity = quantity 
+            ? (typeof quantity === 'number' 
+                ? quantity 
+                : parseFloat(String(quantity)))
+            : undefined;
+
+          // Parse date if present, otherwise use current date
+          let expenseDate = new Date();
+          if (dateValue) {
+            // Try to parse the date
+            let parsedDate: Date;
+            if (typeof dateValue === 'number') {
+              // Excel date serial number (days since 1900-01-01)
+              // Excel epoch starts on 1900-01-01, but Excel incorrectly treats 1900 as a leap year
+              // So we need to adjust: Excel date = (days since 1900-01-01) - 1
+              const excelEpoch = new Date(1899, 11, 30); // December 30, 1899
+              parsedDate = new Date(excelEpoch.getTime() + (dateValue - 1) * 24 * 60 * 60 * 1000);
+            } else if (dateValue instanceof Date) {
+              parsedDate = dateValue;
+            } else {
+              // Try parsing as date string
+              parsedDate = new Date(dateValue);
+            }
+            if (!isNaN(parsedDate.getTime())) {
+              expenseDate = parsedDate;
+            }
+          }
 
           // Build expense data
           const expenseData: Omit<Expense, 'id' | 'createdAt'> = {
             categoryId: selectedCategory.id,
             categoryName: selectedCategory.name,
-            name: itemName ? String(itemName) : 'Expense',
+            name: String(name).trim(),
             paymentMethod: 'cash',
-            amount: parsedAmount,
-            toWhom: toWhom ? String(toWhom) : 'Unknown',
+            amount: parsedAmount, // Total amount from Жамми сума
+            toWhom: source ? String(source).trim() : 'Unknown',
             createdBy: user.id,
             createdByName: user.name,
+            ...(parsedUnitPrice && !isNaN(parsedUnitPrice) && { unitPrice: parsedUnitPrice }),
             ...(parsedQuantity && !isNaN(parsedQuantity) && { quantity: parsedQuantity }),
-            ...(projectDescription && { comment: String(projectDescription) })
+            ...(project && { comment: String(project).trim() })
           };
 
-          await createExpense(expenseData);
+          // Create expense with custom date
+          const expenseRef = doc(collection(db, 'expenses'));
+          const expenseDataWithDate = {
+            ...expenseData,
+            createdAt: Timestamp.fromDate(expenseDate),
+          };
+          await setDoc(expenseRef, expenseDataWithDate);
           successCount++;
-        } catch (rowError) {
-          console.error('Error processing row:', rowError);
+        } catch (rowError: any) {
+          console.error(`Error processing row ${rowIndex + 2}:`, rowError);
+          console.error('Row data:', row);
           errorCount++;
         }
       }
@@ -808,6 +947,16 @@ export default function FinanceDashboard() {
               <FaChartPie className="w-4 h-4" />
               <span>{t('finance.tab.statistics')}</span>
             </button>
+            <button
+              onClick={() => setActiveTab('contracts')}
+              className={`${activeTab === 'contracts'
+                ? 'border-purple-500 text-purple-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+            >
+              <FaFolder className="w-4 h-4" />
+              <span>{t('finance.tab.contracts') || 'Contracts'} ({contracts.length})</span>
+            </button>
           </nav>
         </div>
 
@@ -918,6 +1067,15 @@ export default function FinanceDashboard() {
                 </select>
               </div>
 
+              {/* Download Template Button */}
+              <button
+                onClick={handleDownloadTemplate}
+                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+              >
+                <FaDownload className="w-4 h-4" />
+                <span>{t('finance.download_template') || 'Download Template'}</span>
+              </button>
+
               {/* Import Excel Button */}
               <label className={`flex items-center space-x-2 ${importing ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors cursor-pointer`}>
                 <FaFileExcel className="w-4 h-4" />
@@ -960,8 +1118,10 @@ export default function FinanceDashboard() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.category')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.to_whom')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.stage')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.price')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.quantity')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.total')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.payment_method')}</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.amount')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.comment')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.actions')}</th>
                     </tr>
@@ -969,7 +1129,7 @@ export default function FinanceDashboard() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {expenses.length === 0 ? (
                       <tr>
-                        <td colSpan={9} className="px-6 py-4 text-center text-gray-500">{t('finance.no_expenses')}</td>
+                        <td colSpan={12} className="px-6 py-4 text-center text-gray-500">{t('finance.no_expenses')}</td>
                       </tr>
                     ) : (
                       expenses.map((expense) => (
@@ -996,10 +1156,16 @@ export default function FinanceDashboard() {
                             })()}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {t(`finance.payment_method.${expense.paymentMethod}`)}
+                            {expense.unitPrice ? formatNumberWithSpaces(expense.unitPrice.toString()) + ' UZS' : '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {expense.quantity || '-'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
                             {expense.amount.toLocaleString()} UZS
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {t(`finance.payment_method.${expense.paymentMethod}`)}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">{expense.comment || '-'}</td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -1097,7 +1263,12 @@ export default function FinanceDashboard() {
           projects={projects}
           stages={stages}
           expenseCategories={expenseCategories}
+          users={users}
           submitting={submitting}
+          selectedEmployeeIds={expenseForm.selectedEmployeeIds}
+          onEmployeeSelectionChange={(employeeIds) => {
+            setExpenseForm({ ...expenseForm, selectedEmployeeIds: employeeIds });
+          }}
         />
 
         {/* Category Modal */}
@@ -1315,6 +1486,104 @@ export default function FinanceDashboard() {
           setCategoryForm={setOfficeWasteCategoryForm}
           submitting={submitting}
         />
+
+        {/* Contracts Tab */}
+        {activeTab === 'contracts' && (
+          <div>
+            <div className="bg-white shadow rounded-lg overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.client') || 'Client'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.location') || 'Location'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.construction') || 'Construction'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.price') || 'Price'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.deadline') || 'Deadline'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.contract.status') || 'Status'}
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      {t('finance.table.actions') || 'Actions'}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {contracts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="px-6 py-4 text-center text-gray-500">
+                        {t('finance.no_contracts') || 'No contracts found'}
+                      </td>
+                    </tr>
+                  ) : (
+                    contracts.map((contract) => {
+                      const contractProfits = profits.filter(p => p.projectId === contract.id);
+                      const contractExpenses = expenses.filter(e => e.projectId === contract.id);
+                      const contractTotalProfit = contractProfits.reduce((sum, p) => sum + p.amount, 0);
+                      const contractTotalExpense = contractExpenses.reduce((sum, e) => sum + e.amount, 0);
+                      const contractNetProfit = contractTotalProfit - contractTotalExpense;
+
+                      return (
+                        <tr 
+                          key={contract.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => router.push(`/dashboard/finance/contracts/${contract.id}`)}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {contract.clientName} {contract.clientSurname}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {contract.location}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {contract.constructionName || '-'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
+                            {formatNumberWithSpaces(contract.price.toString())} UZS
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                            {contract.deadline.toLocaleDateString()}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              contract.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              contract.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                              'bg-yellow-100 text-yellow-800'
+                            }`}>
+                              {t(`status.${contract.status}` as any) || contract.status}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <div className="flex items-center space-x-2">
+                              <span className="text-green-600">
+                                +{formatNumberWithSpaces(contractTotalProfit.toString())}
+                              </span>
+                              <span className="text-red-600">
+                                -{formatNumberWithSpaces(contractTotalExpense.toString())}
+                              </span>
+                              <span className={`font-semibold ${contractNetProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                                {contractNetProfit >= 0 ? '+' : ''}{formatNumberWithSpaces(contractNetProfit.toString())}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </Layout >
   );
