@@ -330,11 +330,13 @@ export default function ExpenseModal({
                 >
                   <option value="">{t('finance.expense.select_profit_optional') || 'Select Profit (Optional)'}</option>
                   {profits.map((profit) => {
-                    const profitDate = profit.createdAt instanceof Date 
-                      ? profit.createdAt 
-                      : profit.createdAt?.toDate 
-                      ? profit.createdAt.toDate() 
-                      : new Date(profit.createdAt);
+                    const createdAtAny = profit.createdAt as unknown as { toDate?: () => Date } | Date | string | number;
+                    const profitDate =
+                      createdAtAny instanceof Date
+                        ? createdAtAny
+                        : typeof (createdAtAny as any)?.toDate === 'function'
+                          ? (createdAtAny as any).toDate()
+                          : new Date(createdAtAny as any);
                     const dateStr = profitDate.toLocaleDateString(locale === 'uz' ? 'uz-UZ' : locale === 'ru' ? 'ru-RU' : 'en-US');
                     
                     // Get construction name from project if available

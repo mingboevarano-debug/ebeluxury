@@ -460,7 +460,7 @@ export default function FinanceDashboard() {
         ? users.filter(u => expenseForm.selectedEmployeeIds.includes(u.id))
         : [];
 
-      const expenseData = {
+      const expenseData: Omit<Expense, 'id' | 'createdAt'> = {
         categoryId: expenseForm.categoryId,
         categoryName: category?.name || '',
         name: expenseForm.name.trim(),
