@@ -41,7 +41,8 @@ export default function ContractDetailPage() {
     amount: '',
     toWhom: '',
     comment: '',
-    selectedEmployeeIds: [] as string[]
+    selectedEmployeeIds: [] as string[],
+    profitId: '' as string | undefined
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -165,7 +166,8 @@ export default function ContractDetailPage() {
         amount: formatNumberWithSpaces(expense.amount.toString()),
         toWhom: expense.toWhom,
         comment: expense.comment || '',
-        selectedEmployeeIds: expense.employees || []
+        selectedEmployeeIds: expense.employees || [],
+        profitId: expense.profitId || ''
       });
     } else {
       setEditingExpense(null);
@@ -178,7 +180,8 @@ export default function ContractDetailPage() {
         amount: '',
         toWhom: '',
         comment: '',
-        selectedEmployeeIds: []
+        selectedEmployeeIds: [],
+        profitId: ''
       });
     }
     setIsExpenseModalOpen(true);
@@ -247,7 +250,8 @@ export default function ContractDetailPage() {
         ...(selectedEmployees.length > 0 && {
           employees: selectedEmployees.map(e => e.id),
           employeeNames: selectedEmployees.map(e => e.name)
-        })
+        }),
+        ...(expenseForm.profitId && { profitId: expenseForm.profitId })
       };
 
       await createExpense(expenseData);
@@ -263,7 +267,8 @@ export default function ContractDetailPage() {
         amount: '',
         toWhom: '',
         comment: '',
-        selectedEmployeeIds: []
+        selectedEmployeeIds: [],
+        profitId: ''
       });
     } catch (error: any) {
       console.error('Error saving expense:', error);
@@ -434,12 +439,12 @@ export default function ContractDetailPage() {
             </p>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow border border-purple-100">
-            <h3 className="text-lg font-medium text-gray-500">{t('finance.remaining') || 'Remaining'}</h3>
-            <p className="text-3xl font-bold text-purple-600 mt-2">
-              {formatNumberWithSpaces((contractPrice - totalExpense).toString())} UZS
+          <div className="bg-gray-100 p-6 rounded-lg shadow border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-600 tracking-wide">{t('finance.contract.money_on_delay') || 'Money on Delay'}</h3>
+            <p className="text-3xl font-bold text-gray-700 mt-2">
+              {formatNumberWithSpaces((contractPrice - totalProfit).toString())} UZS
             </p>
-            <p className="text-sm text-gray-400 mt-1">{t('finance.from_contract') || 'from contract'}</p>
+            <p className="text-sm text-gray-500 mt-1">{t('finance.from_contract') || 'from contract'}</p>
           </div>
         </div>
 
@@ -572,6 +577,7 @@ export default function ContractDetailPage() {
           stages={stages}
           expenseCategories={categories.filter(c => c.type === 'expense')}
           users={users}
+          profits={profits}
           submitting={submitting}
           selectedEmployeeIds={expenseForm.selectedEmployeeIds}
           onEmployeeSelectionChange={(employeeIds) => {

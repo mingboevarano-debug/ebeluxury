@@ -222,6 +222,7 @@ export interface Expense {
   comment?: string;
   employees?: string[]; // Array of employee IDs for salary expenses
   employeeNames?: string[]; // Array of employee names for display
+  profitId?: string; // Optional link to a profit entry
   createdAt: Date;
   createdBy: string;
   createdByName: string;

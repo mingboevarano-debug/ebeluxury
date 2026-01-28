@@ -10,9 +10,10 @@ import {
   FaFolder,
   FaTag,
   FaComment,
+  FaChevronDown,
 } from 'react-icons/fa';
 import { formatNumberWithSpaces, parseFormattedNumber } from '@/lib/formatNumber';
-import { Expense, Project, FinanceCategory, LocalizedStage, User } from '@/types';
+import { Expense, Project, FinanceCategory, LocalizedStage, User, Profit } from '@/types';
 import { useLanguage } from '@/contexts/LanguageContext';
 import EmployeeSelectionModal from './EmployeeSelectionModal';
 
@@ -31,6 +32,7 @@ interface ExpenseModalProps {
     toWhom: string;
     comment: string;
     selectedEmployeeIds?: string[];
+    profitId?: string;
   };
   setExpenseForm: React.Dispatch<
     React.SetStateAction<{
@@ -43,12 +45,14 @@ interface ExpenseModalProps {
       toWhom: string;
       comment: string;
       selectedEmployeeIds?: string[];
+      profitId?: string;
     }>
   >;
   projects: Project[];
   stages: LocalizedStage[];
   expenseCategories: FinanceCategory[];
   users: User[];
+  profits?: Profit[]; // Optional profits list for selection
   submitting: boolean;
   selectedEmployeeIds?: string[];
   onEmployeeSelectionChange?: (employeeIds: string[]) => void;
@@ -66,6 +70,7 @@ export default function ExpenseModal({
   stages,
   expenseCategories,
   users,
+  profits = [],
   submitting,
   selectedEmployeeIds = [],
   onEmployeeSelectionChange,
@@ -159,33 +164,36 @@ export default function ExpenseModal({
                 <FaFolder className="text-red-600" />
                 <span>{t('finance.expense.to_project')}</span>
               </label>
-              <select
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
-                value={expenseForm.projectId}
-                onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
-              >
-              <option value="">{t('finance.expense.select_project')}</option>
-              {projects.map((project) => {
-                // Format project display name properly
-                const parts = [];
-                if (project.constructionName) {
-                  parts.push(`[${project.constructionName}]`);
-                }
-                if (project.clientName) {
-                  parts.push(project.clientName);
-                }
-                if (project.location) {
-                  parts.push(project.location);
-                }
-                const displayName = parts.length > 0 ? parts.join(' - ') : t('finance.profit.unknown');
-                
-                return (
-                  <option key={project.id} value={project.id}>
-                    {displayName}
-                  </option>
-                );
-              })}
-            </select>
+              <div className="relative">
+                <select
+                  className="w-full pr-10 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
+                  value={expenseForm.projectId}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, projectId: e.target.value })}
+                >
+                  <option value="">{t('finance.expense.select_project')}</option>
+                  {projects.map((project) => {
+                    // Format project display name properly
+                    const parts = [];
+                    if (project.constructionName) {
+                      parts.push(`[${project.constructionName}]`);
+                    }
+                    if (project.clientName) {
+                      parts.push(project.clientName);
+                    }
+                    if (project.location) {
+                      parts.push(project.location);
+                    }
+                    const displayName = parts.length > 0 ? parts.join(' - ') : t('finance.profit.unknown');
+                    
+                    return (
+                      <option key={project.id} value={project.id}>
+                        {displayName}
+                      </option>
+                    );
+                  })}
+                </select>
+                <FaChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+              </div>
 
             {/* Show selected project details in a clean format */}
             {expenseForm.projectId && (() => {
@@ -288,21 +296,81 @@ export default function ExpenseModal({
                 </p>
               </div>
             ) : (
-              <select
-                required
-                className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
-                value={expenseForm.categoryId}
-                onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
-              >
-                <option value="">{t('finance.expense.select_category')}</option>
-                {expenseCategories.map((category) => (
-                  <option key={category.id} value={category.id}>
-                    {category.name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  required
+                  className="w-full pr-10 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
+                  value={expenseForm.categoryId}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, categoryId: e.target.value })}
+                >
+                  <option value="">{t('finance.expense.select_category')}</option>
+                  {expenseCategories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                <FaChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+              </div>
             )}
           </div>
+
+          {/* Profit Selection - Optional */}
+          {profits.length > 0 && (
+            <div className="group">
+              <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 mb-2">
+                <FaDollarSign className="text-green-600" />
+                <span>{t('finance.expense.from_profit') || 'From Profit (Optional)'}</span>
+              </label>
+              <div className="relative">
+                <select
+                  className="w-full pr-10 px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:ring-2 focus:ring-red-500/20 transition-all duration-200 outline-none bg-white hover:border-gray-300 appearance-none cursor-pointer"
+                  value={expenseForm.profitId || ''}
+                  onChange={(e) => setExpenseForm({ ...expenseForm, profitId: e.target.value || undefined })}
+                >
+                  <option value="">{t('finance.expense.select_profit_optional') || 'Select Profit (Optional)'}</option>
+                  {profits.map((profit) => {
+                    const profitDate = profit.createdAt instanceof Date 
+                      ? profit.createdAt 
+                      : profit.createdAt?.toDate 
+                      ? profit.createdAt.toDate() 
+                      : new Date(profit.createdAt);
+                    const dateStr = profitDate.toLocaleDateString(locale === 'uz' ? 'uz-UZ' : locale === 'ru' ? 'ru-RU' : 'en-US');
+                    
+                    // Get construction name from project if available
+                    let constructionName = '';
+                    if (profit.projectId) {
+                      const project = projects.find(p => p.id === profit.projectId);
+                      if (project?.constructionName) {
+                        constructionName = project.constructionName;
+                      }
+                    }
+                    
+                    // If not found in project, try to extract from projectName
+                    if (!constructionName && profit.projectName) {
+                      const match = profit.projectName.match(/\[([^\]]+)\]/);
+                      if (match) {
+                        constructionName = match[1];
+                      }
+                    }
+                    
+                    // Build display name with construction name if available
+                    let displayName = `${profit.name || profit.categoryName} - ${formatNumberWithSpaces(profit.amount.toString())} (${dateStr})`;
+                    if (constructionName) {
+                      displayName = `${constructionName} | ${displayName}`;
+                    }
+                    
+                    return (
+                      <option key={profit.id} value={profit.id}>
+                        {displayName}
+                      </option>
+                    );
+                  })}
+                </select>
+                <FaChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+              </div>
+            </div>
+          )}
 
           {/* Employee Selection - Only show for "Xodimlar maoshi" category */}
           {isSalaryCategory && (

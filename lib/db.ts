@@ -631,8 +631,12 @@ export const deleteAllProfits = async (): Promise<void> => {
 // Expenses
 export const createExpense = async (expense: Omit<Expense, 'id' | 'createdAt'>): Promise<string> => {
   const expenseRef = doc(collection(db, 'expenses'));
+  // Filter out undefined values as Firestore doesn't allow them
+  const cleanExpense = Object.fromEntries(
+    Object.entries(expense).filter(([_, value]) => value !== undefined)
+  ) as Omit<Expense, 'id' | 'createdAt'>;
   const expenseData = {
-    ...expense,
+    ...cleanExpense,
     createdAt: Timestamp.now(),
   };
   await setDoc(expenseRef, expenseData);
@@ -654,7 +658,11 @@ export const getExpenses = async (): Promise<Expense[]> => {
 
 export const updateExpense = async (id: string, updates: Partial<Expense>): Promise<void> => {
   const expenseRef = doc(db, 'expenses', id);
-  await updateDoc(expenseRef, updates);
+  // Filter out undefined values as Firestore doesn't allow them
+  const cleanUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([_, value]) => value !== undefined)
+  ) as Partial<Expense>;
+  await updateDoc(expenseRef, cleanUpdates);
 };
 
 export const deleteExpense = async (id: string): Promise<void> => {

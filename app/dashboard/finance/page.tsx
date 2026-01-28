@@ -35,7 +35,7 @@ import {
 import { subscribeToAuthChanges, getCurrentUser } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
-import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder, FaDownload } from 'react-icons/fa';
+import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder, FaDownload, FaChevronDown } from 'react-icons/fa';
 import * as XLSX from 'xlsx';
 import { collection, doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -91,7 +91,8 @@ export default function FinanceDashboard() {
     amount: '',
     toWhom: '',
     comment: '',
-    selectedEmployeeIds: [] as string[]
+    selectedEmployeeIds: [] as string[],
+    profitId: '' as string | undefined
   });
 
   // Category Modal State
@@ -137,6 +138,7 @@ export default function FinanceDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedImportCategoryId, setSelectedImportCategoryId] = useState<string>('');
+  const [selectedImportContractId, setSelectedImportContractId] = useState<string>('');
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges(async (currentUser: User | null) => {
@@ -402,7 +404,8 @@ export default function FinanceDashboard() {
         amount: formatNumberWithSpaces(expense.amount.toString()),
         toWhom: expense.toWhom,
         comment: expense.comment || '',
-        selectedEmployeeIds: expense.employees || []
+        selectedEmployeeIds: expense.employees || [],
+        profitId: expense.profitId || ''
       });
     } else {
       setEditingExpense(null);
@@ -415,7 +418,8 @@ export default function FinanceDashboard() {
         amount: '',
         toWhom: '',
         comment: '',
-        selectedEmployeeIds: []
+        selectedEmployeeIds: [],
+        profitId: ''
       });
     }
     setIsExpenseModalOpen(true);
@@ -457,8 +461,16 @@ export default function FinanceDashboard() {
         : [];
 
       const expenseData = {
-        projectId: expenseForm.projectId || undefined,
-        projectName: project ? (() => {
+        categoryId: expenseForm.categoryId,
+        categoryName: category?.name || '',
+        name: expenseForm.name.trim(),
+        paymentMethod: expenseForm.paymentMethod,
+        amount,
+        toWhom: expenseForm.toWhom.trim(),
+        createdBy: user.id,
+        createdByName: user.name,
+        ...(expenseForm.projectId && { projectId: expenseForm.projectId }),
+        ...(project && (() => {
           // Format project name properly to avoid concatenation mess
           const parts = [];
           if (project.constructionName) {
@@ -470,22 +482,16 @@ export default function FinanceDashboard() {
           if (project.location) {
             parts.push(project.location);
           }
-          return parts.length > 0 ? parts.join(' - ') : undefined;
-        })() : undefined,
-        categoryId: expenseForm.categoryId,
-        categoryName: category?.name || '',
-        name: expenseForm.name.trim(),
-        stage: expenseForm.stage || undefined,
-        paymentMethod: expenseForm.paymentMethod,
-        amount,
-        toWhom: expenseForm.toWhom.trim(),
-        createdBy: user.id,
-        createdByName: user.name,
+          const projectName = parts.length > 0 ? parts.join(' - ') : undefined;
+          return projectName ? { projectName } : {};
+        })()),
+        ...(expenseForm.stage && expenseForm.stage.trim() && { stage: expenseForm.stage.trim() }),
         ...(expenseForm.comment.trim() && { comment: expenseForm.comment.trim() }),
         ...(selectedEmployees.length > 0 && {
           employees: selectedEmployees.map(e => e.id),
           employeeNames: selectedEmployees.map(e => e.name)
-        })
+        }),
+        ...(expenseForm.profitId && { profitId: expenseForm.profitId })
       };
 
       if (editingExpense) {
@@ -494,6 +500,30 @@ export default function FinanceDashboard() {
       } else {
         await createExpense(expenseData);
         toast.success(t('finance.expense_added'));
+        
+        // Send Telegram notification for new expenses
+        try {
+          await fetch('/api/telegram', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: expenseData.name,
+              categoryName: expenseData.categoryName,
+              amount: expenseData.amount,
+              toWhom: expenseData.toWhom,
+              createdByName: expenseData.createdByName,
+              projectName: expenseData.projectName,
+              paymentMethod: expenseData.paymentMethod,
+              comment: expenseData.comment,
+              stage: expenseData.stage,
+            }),
+          });
+        } catch (telegramError) {
+          // Don't show error to user if Telegram notification fails
+          console.error('Failed to send Telegram notification:', telegramError);
+        }
       }
 
       await fetchData();
@@ -507,7 +537,8 @@ export default function FinanceDashboard() {
         amount: '',
         toWhom: '',
         comment: '',
-        selectedEmployeeIds: []
+        selectedEmployeeIds: [],
+        profitId: ''
       });
     } catch (error: any) {
       console.error('Error saving expense:', error);
@@ -779,7 +810,25 @@ export default function FinanceDashboard() {
             createdByName: user.name,
             ...(parsedUnitPrice && !isNaN(parsedUnitPrice) && { unitPrice: parsedUnitPrice }),
             ...(parsedQuantity && !isNaN(parsedQuantity) && { quantity: parsedQuantity }),
-            ...(project && { comment: String(project).trim() })
+            ...(project && { comment: String(project).trim() }),
+            ...(selectedImportContractId && { projectId: selectedImportContractId }),
+            ...(selectedImportContractId && (() => {
+              const contract = contracts.find(c => c.id === selectedImportContractId);
+              if (!contract) return {};
+              const parts = [];
+              if (contract.constructionName) {
+                parts.push(`[${contract.constructionName}]`);
+              }
+              const clientFullName = `${contract.clientName} ${contract.clientSurname}`.trim();
+              if (clientFullName) {
+                parts.push(clientFullName);
+              }
+              if (contract.location) {
+                parts.push(contract.location);
+              }
+              const projectName = parts.length > 0 ? parts.join(' - ') : undefined;
+              return projectName ? { projectName } : {};
+            })()),
           };
 
           // Create expense with custom date
@@ -789,6 +838,31 @@ export default function FinanceDashboard() {
             createdAt: Timestamp.fromDate(expenseDate),
           };
           await setDoc(expenseRef, expenseDataWithDate);
+          
+          // Send Telegram notification for imported expenses
+          try {
+            await fetch('/api/telegram', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                name: expenseData.name,
+                categoryName: expenseData.categoryName,
+                amount: expenseData.amount,
+                toWhom: expenseData.toWhom,
+                createdByName: expenseData.createdByName,
+                projectName: expenseData.projectName,
+                paymentMethod: expenseData.paymentMethod,
+                comment: expenseData.comment,
+                stage: expenseData.stage,
+              }),
+            });
+          } catch (telegramError) {
+            // Don't show error to user if Telegram notification fails
+            console.error('Failed to send Telegram notification:', telegramError);
+          }
+          
           successCount++;
         } catch (rowError: any) {
           console.error(`Error processing row ${rowIndex + 2}:`, rowError);
@@ -856,6 +930,12 @@ export default function FinanceDashboard() {
   const totalProfit = profits.reduce((sum, p) => sum + p.amount, 0);
   const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = totalProfit - totalExpense;
+  const totalContractPrice = contracts.reduce((sum, c) => sum + c.price, 0);
+  const totalContractProfits = contracts.reduce((sum, contract) => {
+    const contractProfits = profits.filter(p => p.projectId === contract.id);
+    return sum + contractProfits.reduce((profitSum, p) => profitSum + p.amount, 0);
+  }, 0);
+  const totalMoneyOnDelay = totalContractPrice - totalContractProfits;
 
   return (
     <Layout>
@@ -872,19 +952,25 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-lg shadow border border-green-100">
             <h3 className="text-lg font-medium text-gray-500">{t('finance.total_profit')}</h3>
-            <p className="text-3xl font-bold text-green-600 mt-2">{totalProfit.toLocaleString()} UZS</p>
+            <p className="text-3xl font-bold text-green-600 mt-2">{formatNumberWithSpaces(totalProfit.toString())} UZS</p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow border border-red-100">
             <h3 className="text-lg font-medium text-gray-500">{t('finance.total_expense')}</h3>
-            <p className="text-3xl font-bold text-red-600 mt-2">{totalExpense.toLocaleString()} UZS</p>
+            <p className="text-3xl font-bold text-red-600 mt-2">{formatNumberWithSpaces(totalExpense.toString())} UZS</p>
           </div>
           <div className={`bg-white p-6 rounded-lg shadow border ${netProfit >= 0 ? 'border-blue-100' : 'border-red-100'}`}>
             <h3 className="text-lg font-medium text-gray-500">{t('finance.net_profit')}</h3>
             <p className={`text-3xl font-bold mt-2 ${netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-              {netProfit.toLocaleString()} UZS
+              {formatNumberWithSpaces(netProfit.toString())} UZS
+            </p>
+          </div>
+          <div className="bg-gray-100 p-6 rounded-lg shadow border border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-600 tracking-wide">{t('finance.contract.money_on_delay')}</h3>
+            <p className="text-3xl font-bold mt-2 text-gray-700">
+              {formatNumberWithSpaces(totalMoneyOnDelay.toString())} UZS
             </p>
           </div>
         </div>
@@ -1051,60 +1137,98 @@ export default function FinanceDashboard() {
         {/* Expense Tab */}
         {activeTab === 'expense' && (
           <div>
-            <div className="flex justify-end gap-3 mb-4 items-center">
-              {/* Category selector for import */}
-              <div className="flex items-center space-x-2 mr-2">
-                <span className="text-sm font-medium text-gray-700 whitespace-nowrap">{t('finance.import_category')}:</span>
-                <select
-                  value={selectedImportCategoryId}
-                  onChange={(e) => setSelectedImportCategoryId(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500"
-                >
-                  <option value="">{t('finance.select_category')}</option>
-                  {expenseCategories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </select>
+            {/* Expense toolbar */}
+            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
+              {/* Import configuration (category + contract) */}
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                    {t('finance.import_category')}
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedImportCategoryId}
+                      onChange={(e) => setSelectedImportCategoryId(e.target.value)}
+                      className="min-w-[220px] pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
+                    >
+                      <option value="">{t('finance.select_category')}</option>
+                      {expenseCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
+                    <FaChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+                    {t('finance.import_contract')}
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={selectedImportContractId}
+                      onChange={(e) => setSelectedImportContractId(e.target.value)}
+                      className="min-w-[260px] max-w-xs pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
+                    >
+                      <option value="">{t('finance.select_contract') || 'Without contract'}</option>
+                      {contracts.map((contract) => {
+                        const clientFullName = `${contract.clientName} ${contract.clientSurname}`.trim();
+                        const labelParts = [];
+                        if (clientFullName) labelParts.push(clientFullName);
+                        if (contract.location) labelParts.push(contract.location);
+                        if (contract.constructionName) labelParts.push(`[${contract.constructionName}]`);
+                        const label = labelParts.join(' • ');
+                        return (
+                          <option key={contract.id} value={contract.id}>
+                            {label || contract.id}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <FaChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3 w-3 text-gray-400" />
+                  </div>
+                </div>
               </div>
 
-              {/* Download Template Button */}
-              <button
-                onClick={handleDownloadTemplate}
-                className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
-              >
-                <FaDownload className="w-4 h-4" />
-                <span>{t('finance.download_template') || 'Download Template'}</span>
-              </button>
+              {/* Actions: template, import, bulk delete, add */}
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  onClick={handleDownloadTemplate}
+                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                >
+                  <FaDownload className="w-4 h-4" />
+                  <span>{t('finance.download_template') || 'Download Template'}</span>
+                </button>
 
-              {/* Import Excel Button */}
-              <label className={`flex items-center space-x-2 ${importing ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors cursor-pointer`}>
-                <FaFileExcel className="w-4 h-4" />
-                <span>{importing ? t('finance.importing') : t('finance.import_excel')}</span>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleImportExcel}
-                  disabled={importing}
-                  className="hidden"
-                />
-              </label>
+                <label className={`flex items-center space-x-2 ${importing ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors cursor-pointer`}>
+                  <FaFileExcel className="w-4 h-4" />
+                  <span>{importing ? t('finance.importing') : t('finance.import_excel')}</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls"
+                    onChange={handleImportExcel}
+                    disabled={importing}
+                    className="hidden"
+                  />
+                </label>
 
-              <button
-                onClick={handleDeleteAllExpenses}
-                className="flex items-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
-                disabled={expenses.length === 0}
-              >
-                <FaTrash className="w-4 h-4" />
-                <span>{t('finance.remove_all')}</span>
-              </button>
+                <button
+                  onClick={handleDeleteAllExpenses}
+                  className="flex items-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                  disabled={expenses.length === 0}
+                >
+                  <FaTrash className="w-4 h-4" />
+                  <span>{t('finance.remove_all')}</span>
+                </button>
 
-              <button
-                onClick={() => handleOpenExpenseModal()}
-                className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
-              >
-                <FaPlus className="w-4 h-4" />
-                <span>{t('finance.add_expense')}</span>
-              </button>
+                <button
+                  onClick={() => handleOpenExpenseModal()}
+                  className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                >
+                  <FaPlus className="w-4 h-4" />
+                  <span>{t('finance.add_expense')}</span>
+                </button>
+              </div>
             </div>
 
             <div className="bg-white shadow rounded-lg overflow-x-auto">
@@ -1264,6 +1388,7 @@ export default function FinanceDashboard() {
           stages={stages}
           expenseCategories={expenseCategories}
           users={users}
+          profits={profits}
           submitting={submitting}
           selectedEmployeeIds={expenseForm.selectedEmployeeIds}
           onEmployeeSelectionChange={(employeeIds) => {
