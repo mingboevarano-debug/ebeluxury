@@ -31,8 +31,8 @@ interface ExpenseModalProps {
     amount: string;
     toWhom: string;
     comment: string;
-    selectedEmployeeIds?: string[];
-    profitId?: string;
+    selectedEmployeeIds: string[];
+    profitId: string | undefined;
   };
   setExpenseForm: React.Dispatch<
     React.SetStateAction<{
@@ -44,8 +44,8 @@ interface ExpenseModalProps {
       amount: string;
       toWhom: string;
       comment: string;
-      selectedEmployeeIds?: string[];
-      profitId?: string;
+      selectedEmployeeIds: string[];
+      profitId: string | undefined;
     }>
   >;
   projects: Project[];
