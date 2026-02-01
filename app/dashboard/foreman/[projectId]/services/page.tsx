@@ -188,23 +188,23 @@ export default function ProjectServicesPage() {
 
   return (
     <Layout>
-      <div className="px-4 py-6">
-        <div className="mb-6">
+      <div className="px-3 sm:px-4 py-4 sm:py-6">
+        <div className="mb-4 sm:mb-6">
           <button
             onClick={() => router.push('/dashboard/foreman')}
-            className="mb-4 text-indigo-600 hover:text-indigo-800 font-medium flex items-center transition-colors"
+            className="mb-3 sm:mb-4 text-indigo-600 hover:text-indigo-800 font-medium flex items-center transition-colors"
           >
-            <HiArrowLeft className="w-5 h-5 mr-2" />
-            {t('foreman.back_to_projects')}
+            <HiArrowLeft className="w-5 h-5 mr-2 flex-shrink-0" />
+            <span className="truncate">{t('foreman.back_to_projects')}</span>
           </button>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2 truncate">
             {t('foreman.project_services')} - {project.clientName || project.id.slice(0, 8)}
           </h1>
-          <p className="text-gray-600">{project.location}</p>
+          <p className="text-sm sm:text-base text-gray-600 truncate">{project.location}</p>
         </div>
 
         {/* Info Banner */}
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6 rounded-r-lg">
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-3 sm:p-4 mb-4 sm:mb-6 rounded-r-lg">
           <div className="flex items-start">
             <HiInformationCircle className="w-5 h-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
             <p className="text-sm text-blue-700">
@@ -214,16 +214,16 @@ export default function ProjectServicesPage() {
         </div>
 
         {/* Statistics Card */}
-        <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-indigo-100">
-          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-6">
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
+        <div className="bg-white shadow-lg rounded-lg p-4 sm:p-6 mb-4 sm:mb-6 border-2 border-indigo-100">
+          <div className="grid grid-cols-1 gap-4 mb-4 sm:mb-6">
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 sm:p-5 border-2 border-blue-200 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">
                   {t('foreman.selected_services')}
                 </p>
                 <HiCheckCircle className="w-6 h-6 text-blue-500" />
               </div>
-              <p className="text-4xl font-bold text-blue-800">{selectedServices.length}</p>
+              <p className="text-3xl sm:text-4xl font-bold text-blue-800">{selectedServices.length}</p>
               <p className="text-xs text-blue-600 mt-1">
                 {formatTranslation('foreman.out_of_services', constructionServices.length)}
               </p>
@@ -270,14 +270,14 @@ export default function ProjectServicesPage() {
         </div>
 
         {/* Services List */}
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {Object.entries(servicesByStage).map(([stage, services]) => {
             const stageSelectedServices = services.filter(s => selectedServices.includes(s.id));
 
             return (
               <div key={stage} className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
-                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-6 py-4">
-                  <h2 className="text-xl font-bold text-white">{stage}</h2>
+                <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 sm:px-6 py-3 sm:py-4">
+                  <h2 className="text-base sm:text-xl font-bold text-white truncate">{stage}</h2>
                 </div>
                 <div className="divide-y divide-gray-200">
                   {services.map((service) => {
@@ -286,7 +286,7 @@ export default function ProjectServicesPage() {
                     return (
                       <div
                         key={service.id}
-                        className={`px-6 py-4 transition-all ${isSelected
+                        className={`px-4 sm:px-6 py-3 sm:py-4 transition-all ${isSelected
                             ? 'bg-green-50 border-l-4 border-green-500 shadow-sm'
                             : 'hover:bg-gray-50'
                           }`}
@@ -364,7 +364,7 @@ export default function ProjectServicesPage() {
                     );
                   })}
                 </div>
-                <div className="bg-gray-50 px-6 py-4 border-t-2 border-gray-200">
+                <div className="bg-gray-50 px-4 sm:px-6 py-3 sm:py-4 border-t-2 border-gray-200">
                   <span className="text-sm font-semibold text-gray-700">
                     {t('foreman.stage_total')} ({stageSelectedServices.length} / {services.length})
                   </span>

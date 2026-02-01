@@ -356,28 +356,28 @@ export default function ForemanContractDetailPage() {
 
   return (
     <Layout>
-      <div className="px-4 py-6">
+      <div className="px-3 sm:px-4 py-4 sm:py-6">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-4 sm:mb-6">
           <button
             onClick={() => router.push('/dashboard/foreman')}
-            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-4"
+            className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-3 sm:mb-4"
           >
-            <FaArrowLeft />
-            <span>{t('foreman.back_to_projects') || 'Back to Dashboard'}</span>
+            <FaArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
+            <span className="truncate">{t('foreman.back_to_projects') || 'Back to Dashboard'}</span>
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">
             {t('finance.contract_details') || 'Contract Details'}
           </h1>
         </div>
 
         {/* Mening Loyihalarim (My Projects) - First/Top */}
         {canViewProject && project && (
-          <div className="bg-white shadow rounded-lg p-6 mb-6">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-4">{t('foreman.projects')}</h2>
-            <div className="border rounded-lg p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-900">{project.clientName || project.id.slice(0, 8)}</h3>
+          <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4">{t('foreman.projects')}</h2>
+            <div className="border rounded-lg p-4 sm:p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <h3 className="text-base sm:text-lg font-bold text-gray-900 truncate">{project.clientName || project.id.slice(0, 8)}</h3>
                 <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-800 border border-green-300">
                   {project.status?.toUpperCase() || 'ACTIVE'}
                 </span>
@@ -391,9 +391,9 @@ export default function ForemanContractDetailPage() {
                   </div>
                 </div>
               )}
-              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl p-4">
+              <div className="bg-gradient-to-r from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl p-3 sm:p-4">
                 <p className="text-xs font-semibold text-indigo-600 mb-2 uppercase flex items-center">
-                  <MdAccessTime className="w-4 h-4 mr-1" />
+                  <MdAccessTime className="w-4 h-4 mr-1 flex-shrink-0" />
                   {t('foreman.deadline')}
                 </p>
                 <Countdown
@@ -402,16 +402,16 @@ export default function ForemanContractDetailPage() {
                     if (completed) {
                       return (
                         <div className="flex items-center space-x-2 text-red-600">
-                          <MdCancel className="w-6 h-6" />
-                          <span className="text-xl font-black">{t('status.expired')}</span>
+                          <MdCancel className="w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
+                          <span className="text-lg sm:text-xl font-black">{t('status.expired')}</span>
                         </div>
                       );
                     }
                     const isUrgent = days === 0;
                     return (
-                      <div className={`flex items-center space-x-3 ${isUrgent ? 'text-red-600 animate-pulse' : 'text-indigo-700'}`}>
-                        {isUrgent && <MdWarning className="w-6 h-6 animate-bounce" />}
-                        <span className="text-3xl font-black font-mono">
+                      <div className={`flex flex-wrap items-center gap-2 sm:gap-3 ${isUrgent ? 'text-red-600 animate-pulse' : 'text-indigo-700'}`}>
+                        {isUrgent && <MdWarning className="w-5 h-5 sm:w-6 sm:h-6 animate-bounce flex-shrink-0" />}
+                        <span className="text-xl sm:text-2xl md:text-3xl font-black font-mono break-all">
                           {days}{t('timer.days')} {hours}{t('timer.hours')} {minutes}{t('timer.minutes')} {seconds}{t('timer.seconds')}
                         </span>
                       </div>
@@ -429,19 +429,19 @@ export default function ForemanContractDetailPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                   <p className="text-xs text-blue-600 font-medium">{t('foreman.emp_count')}</p>
-                  <p className="text-2xl font-bold text-blue-700">{project.employeeCount || 0}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-blue-700">{project.employeeCount || 0}</p>
                 </div>
                 <div className="bg-purple-50 rounded-lg p-3 border border-purple-200">
                   <p className="text-xs text-purple-600 font-medium">{t('foreman.total_workers')}</p>
-                  <p className="text-2xl font-bold text-purple-700">{project.totalWorkers || 0}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-purple-700">{project.totalWorkers || 0}</p>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200">
+              <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 pt-2 border-t border-gray-200">
                 <button
                   onClick={() => router.push(`/dashboard/foreman/${project.id}/services`)}
-                  className="flex-1 min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaSearch className="w-5 h-5" />
+                  <FaSearch className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.more_details') || 'Details'}</span>
                 </button>
                 <button
@@ -451,37 +451,37 @@ export default function ForemanContractDetailPage() {
                     setTotalWorkers(project.totalWorkers?.toString() || '');
                     setShowManageModal(true);
                   }}
-                  className="flex-1 min-w-[140px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaFileAlt className="w-5 h-5" />
+                  <FaFileAlt className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.manage')}</span>
                 </button>
                 <button
                   onClick={() => setShowReportModal(true)}
-                  className="flex-1 min-w-[140px] bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaChartBar className="w-5 h-5" />
+                  <FaChartBar className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.send_report')}</span>
                 </button>
                 <button
                   onClick={() => setShowWarningModal(true)}
-                  className="flex-1 min-w-[140px] bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaExclamationTriangle className="w-5 h-5" />
+                  <FaExclamationTriangle className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.send_warning')}</span>
                 </button>
                 <button
                   onClick={() => setShowSupplyModal(true)}
-                  className="flex-1 min-w-[140px] bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaFileAlt className="w-5 h-5" />
+                  <FaFileAlt className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.request_supply')}</span>
                 </button>
                 <button
                   onClick={() => setShowDraftModal(true)}
-                  className="flex-1 min-w-[140px] bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                  className="flex-1 min-w-0 sm:min-w-[140px] bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
                 >
-                  <FaPencilRuler className="w-5 h-5" />
+                  <FaPencilRuler className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.draw_draft')}</span>
                 </button>
               </div>
@@ -490,13 +490,13 @@ export default function ForemanContractDetailPage() {
         )}
 
         {/* Contract Information Card */}
-        <div className="bg-white shadow rounded-lg p-6 mb-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+        <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center space-x-2">
             <FaBuilding className="text-indigo-600" />
             <span>{t('finance.contract_info') || 'Contract Information'}</span>
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             <div>
               <label className="text-sm font-medium text-gray-500 flex items-center space-x-2 mb-1">
                 <FaUser />
@@ -583,8 +583,8 @@ export default function ForemanContractDetailPage() {
           </div>
 
           {/* Expenses Section */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center space-x-2">
+          <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center space-x-2">
               <FaChartBar className="text-red-600" />
               <span>{t('finance.expenses') || 'Expenses'} ({expenses.length})</span>
             </h2>
@@ -592,8 +592,8 @@ export default function ForemanContractDetailPage() {
               <p className="text-gray-500 py-4">{t('finance.no_expenses') || 'No expenses for this contract.'}</p>
             ) : (
               <>
-                <div className="overflow-x-auto rounded-lg border border-gray-200">
-                  <table className="min-w-full divide-y divide-gray-200">
+                <div className="overflow-x-auto overflow-y-hidden rounded-lg border border-gray-200 -mx-2 sm:mx-0">
+                    <table className="min-w-[600px] sm:min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.date')}</th>
@@ -648,8 +648,8 @@ export default function ForemanContractDetailPage() {
 
         {/* Modals */}
         {showManageModal && project && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-4 sm:p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">{t('foreman.details')} - {project.clientName}</h2>
               <div className="space-y-4">
                 <div>
@@ -676,18 +676,18 @@ export default function ForemanContractDetailPage() {
         )}
 
         {showReportModal && project && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-4 sm:p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">{t('foreman.send_report')}</h2>
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700">{t('table.description')}</label>
                   <textarea rows={4} className="mt-1 block w-full rounded-md border-gray-300" value={reportDescription} onChange={(e) => setReportDescription(e.target.value)} />
                 </div>
-                <div className="flex space-x-2">
-                  <button onClick={() => handleCaptureMedia('photo')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center space-x-2"><FaCamera className="w-4 h-4" /><span>{t('foreman.capture_photo')}</span></button>
-                  <button onClick={() => handleCaptureMedia('video')} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md flex items-center space-x-2"><FaVideo className="w-4 h-4" /><span>{t('foreman.capture_video')}</span></button>
-                  <button onClick={handleGetLocation} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center space-x-2"><FaMapMarkerAlt className="w-4 h-4" /><span>{t('foreman.get_location')}</span></button>
+                <div className="flex flex-col sm:flex-row gap-2 sm:space-x-2">
+                  <button onClick={() => handleCaptureMedia('photo')} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md flex items-center justify-center space-x-2"><FaCamera className="w-4 h-4 flex-shrink-0" /><span>{t('foreman.capture_photo')}</span></button>
+                  <button onClick={() => handleCaptureMedia('video')} className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-md flex items-center justify-center space-x-2"><FaVideo className="w-4 h-4 flex-shrink-0" /><span>{t('foreman.capture_video')}</span></button>
+                  <button onClick={handleGetLocation} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md flex items-center justify-center space-x-2"><FaMapMarkerAlt className="w-4 h-4 flex-shrink-0" /><span>{t('foreman.get_location')}</span></button>
                 </div>
                 {location && <p className="text-sm text-gray-600">{t('table.location')}: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}</p>}
                 {photos.length > 0 && <p className="text-sm text-gray-600">{photos.length} photos</p>}
@@ -702,8 +702,8 @@ export default function ForemanContractDetailPage() {
         )}
 
         {showWarningModal && project && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-4 sm:p-6 rounded-lg max-w-md w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">{t('foreman.send_warning')}</h2>
               <div className="space-y-4">
                 <div>
@@ -720,8 +720,8 @@ export default function ForemanContractDetailPage() {
         )}
 
         {showSupplyModal && project && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg max-w-2xl w-full mx-4">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-4 sm:p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">{t('foreman.request_supply')}</h2>
               <div className="space-y-4">
                 <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-700">{t('foreman.supply_hint')}</div>
@@ -729,10 +729,12 @@ export default function ForemanContractDetailPage() {
                   <label className="block text-sm font-medium text-gray-700 mb-2">{t('foreman.items_needed')}</label>
                   <div className="space-y-3">
                     {supplyItems.map((item, idx) => (
-                      <div key={idx} className="flex items-center space-x-2">
-                        <input type="text" className="flex-1 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.material} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], material: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.material_placeholder')} />
-                        <input type="text" className="w-24 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.quantity} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], quantity: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.quantity_placeholder')} />
-                        <button type="button" onClick={() => setSupplyItems([...supplyItems, { material: '', quantity: '' }])} className="px-3 py-3 rounded-lg bg-orange-600 text-white"><FaPlus className="w-4 h-4" /></button>
+                      <div key={idx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <input type="text" className="flex-1 min-w-0 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.material} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], material: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.material_placeholder')} />
+                        <div className="flex gap-2">
+                          <input type="text" className="w-20 sm:w-24 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.quantity} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], quantity: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.quantity_placeholder')} />
+                          <button type="button" onClick={() => setSupplyItems([...supplyItems, { material: '', quantity: '' }])} className="px-3 py-3 rounded-lg bg-orange-600 text-white flex-shrink-0"><FaPlus className="w-4 h-4" /></button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -755,8 +757,8 @@ export default function ForemanContractDetailPage() {
         )}
 
         {showDraftModal && project && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-4 sm:p-6 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">{t('foreman.draft.manage_drafts')}</h2>
                 <button onClick={() => setShowDraftModal(false)} className="text-gray-500 hover:text-gray-700">×</button>

@@ -86,15 +86,15 @@ export default function OfficeWasteManagement({
   return (
     <div className="space-y-6">
       {/* Header with Stats */}
-      <div className="bg-gradient-to-r from-red-600 to-orange-600 rounded-xl p-6 text-white shadow-lg">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-gradient-to-r from-red-600 to-orange-600 rounded-xl p-4 sm:p-6 text-white shadow-lg">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
           <div>
-            <h2 className="text-2xl font-bold">{t('finance.office_waste.title')}</h2>
-            <p className="text-red-100 mt-1">{t('finance.office_waste.subtitle')}</p>
+            <h2 className="text-xl sm:text-2xl font-bold">{t('finance.office_waste.title')}</h2>
+            <p className="text-red-100 mt-1 text-sm sm:text-base">{t('finance.office_waste.subtitle')}</p>
           </div>
           <button
             onClick={onAdd}
-            className="flex items-center space-x-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-lg"
+            className="flex items-center justify-center space-x-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-lg w-full sm:w-auto"
           >
             <FaPlus className="w-4 h-4" />
             <span>{t('finance.office_waste.add')}</span>

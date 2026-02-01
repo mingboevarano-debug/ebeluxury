@@ -33,36 +33,36 @@ export default function ForemanDashboard() {
 
   return (
     <Layout>
-      <div className="px-4 py-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-6">{t('foreman.title')}</h1>
+      <div className="px-3 sm:px-4 py-4 sm:py-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 sm:mb-6 truncate">{t('foreman.title')}</h1>
 
         <div>
-          <h2 className="text-xl font-semibold mb-4">{t('foreman.contracts')}</h2>
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <table className="min-w-full divide-y divide-gray-200">
+          <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">{t('foreman.contracts')}</h2>
+          <div className="bg-white shadow overflow-x-auto overflow-y-hidden rounded-lg -mx-3 sm:mx-0">
+            <table className="min-w-[600px] sm:min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('finance.contract.client') || 'Client'}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('finance.contract.location') || 'Location'}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('finance.contract.construction') || 'Construction'}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('finance.contract.deadline') || 'Deadline'}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('finance.contract.status') || 'Status'}
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {contracts.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
+                    <tr>
+                    <td colSpan={5} className="px-3 sm:px-6 py-8 text-center text-gray-500">
                       {t('foreman.no_contracts')}
                     </td>
                   </tr>
@@ -79,19 +79,19 @@ export default function ForemanDashboard() {
                             : 'hover:bg-indigo-50'
                         }`}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {contract.clientName} {contract.clientSurname}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
                           {contract.location}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
                           {contract.constructionName || '-'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm text-gray-900">
                           {new Date(contract.deadline).toLocaleDateString()}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-sm">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                             contract.status === 'completed' ? 'bg-green-100 text-green-800' :
                             contract.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :

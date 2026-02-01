@@ -939,12 +939,12 @@ export default function FinanceDashboard() {
 
   return (
     <Layout>
-      <div className="px-4 py-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">{t('finance.title')}</h1>
+      <div className="px-3 sm:px-4 py-4 sm:py-6">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 truncate">{t('finance.title')}</h1>
           <button
             onClick={() => setActiveTab('categories')}
-            className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+            className="flex items-center justify-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors flex-shrink-0"
           >
             <FaCog className="w-4 h-4" />
             <span>{t('finance.manage_categories')}</span>
@@ -952,38 +952,38 @@ export default function FinanceDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow border border-green-100">
-            <h3 className="text-lg font-medium text-gray-500">{t('finance.total_profit')}</h3>
-            <p className="text-3xl font-bold text-green-600 mt-2">{formatNumberWithSpaces(totalProfit.toString())} UZS</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+          <div className="bg-white p-4 sm:p-6 rounded-lg shadow border border-green-100">
+            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.total_profit')}</h3>
+            <p className="text-xl sm:text-3xl font-bold text-green-600 mt-2 overflow-x-auto">{formatNumberWithSpaces(totalProfit.toString())} UZS</p>
           </div>
-          <div className="bg-white p-6 rounded-lg shadow border border-red-100">
-            <h3 className="text-lg font-medium text-gray-500">{t('finance.total_expense')}</h3>
-            <p className="text-3xl font-bold text-red-600 mt-2">{formatNumberWithSpaces(totalExpense.toString())} UZS</p>
+          <div className="bg-white p-4 sm:p-6 rounded-lg shadow border border-red-100">
+            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.total_expense')}</h3>
+            <p className="text-xl sm:text-3xl font-bold text-red-600 mt-2 overflow-x-auto">{formatNumberWithSpaces(totalExpense.toString())} UZS</p>
           </div>
-          <div className={`bg-white p-6 rounded-lg shadow border ${netProfit >= 0 ? 'border-blue-100' : 'border-red-100'}`}>
-            <h3 className="text-lg font-medium text-gray-500">{t('finance.net_profit')}</h3>
-            <p className={`text-3xl font-bold mt-2 ${netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+          <div className={`bg-white p-4 sm:p-6 rounded-lg shadow border ${netProfit >= 0 ? 'border-blue-100' : 'border-red-100'}`}>
+            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.net_profit')}</h3>
+            <p className={`text-xl sm:text-3xl font-bold mt-2 overflow-x-auto ${netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
               {formatNumberWithSpaces(netProfit.toString())} UZS
             </p>
           </div>
-          <div className="bg-gray-100 p-6 rounded-lg shadow border border-gray-200">
-            <h3 className="text-lg font-semibold text-gray-600 tracking-wide">{t('finance.contract.money_on_delay')}</h3>
-            <p className="text-3xl font-bold mt-2 text-gray-700">
+          <div className="bg-gray-100 p-4 sm:p-6 rounded-lg shadow border border-gray-200 sm:col-span-2 md:col-span-1">
+            <h3 className="text-sm sm:text-lg font-semibold text-gray-600 tracking-wide">{t('finance.contract.money_on_delay')}</h3>
+            <p className="text-xl sm:text-3xl font-bold mt-2 text-gray-700 overflow-x-auto">
               {formatNumberWithSpaces(totalMoneyOnDelay.toString())} UZS
             </p>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="mb-4 border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
+        {/* Tabs - scrollable on mobile */}
+        <div className="mb-4 border-b border-gray-200 overflow-x-auto overflow-y-hidden -mx-3 sm:mx-0 px-3 sm:px-0">
+          <nav className="-mb-px flex space-x-4 sm:space-x-8 min-w-max pb-px">
             <button
               onClick={() => setActiveTab('profit')}
               className={`${activeTab === 'profit'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.profit')} ({profits.length})
             </button>
@@ -992,7 +992,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'expense'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.expense')} ({expenses.length})
             </button>
@@ -1001,7 +1001,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'categories'
                 ? 'border-indigo-500 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.categories')}
             </button>
@@ -1010,7 +1010,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'office_waste'
                 ? 'border-red-500 text-red-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.office_waste')} ({officeWaste.length})
             </button>
@@ -1019,7 +1019,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'office_waste_categories'
                 ? 'border-red-500 text-red-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.office_waste_categories')}
             </button>
@@ -1028,7 +1028,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'statistics'
                 ? 'border-blue-500 text-blue-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex items-center space-x-2 flex-shrink-0`}
             >
               <FaChartPie className="w-4 h-4" />
               <span>{t('finance.tab.statistics')}</span>
@@ -1038,7 +1038,7 @@ export default function FinanceDashboard() {
               className={`${activeTab === 'contracts'
                 ? 'border-purple-500 text-purple-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center space-x-2`}
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex items-center space-x-2 flex-shrink-0`}
             >
               <FaFolder className="w-4 h-4" />
               <span>{t('finance.tab.contracts') || 'Contracts'} ({contracts.length})</span>
@@ -1054,20 +1054,20 @@ export default function FinanceDashboard() {
         {/* Profit Tab */}
         {activeTab === 'profit' && (
           <div>
-            <div className="flex justify-end mb-4 gap-3">
+            <div className="flex flex-col sm:flex-row sm:justify-end gap-3 mb-4">
               <button
                 onClick={handleDeleteAllProfits}
-                className="flex items-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                className="flex items-center justify-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors w-full sm:w-auto"
                 disabled={profits.length === 0}
               >
-                <FaTrash className="w-4 h-4" />
+                <FaTrash className="w-4 h-4 flex-shrink-0" />
                 <span>{t('finance.remove_all')}</span>
               </button>
               <button
                 onClick={() => handleOpenProfitModal()}
-                className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                className="flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors w-full sm:w-auto"
               >
-                <FaPlus className="w-4 h-4" />
+                <FaPlus className="w-4 h-4 flex-shrink-0" />
                 <span>{t('finance.add_profit')}</span>
               </button>
             </div>
@@ -1138,10 +1138,10 @@ export default function FinanceDashboard() {
         {activeTab === 'expense' && (
           <div>
             {/* Expense toolbar */}
-            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
+            <div className="mb-4 rounded-xl border border-gray-200 bg-gray-50 px-3 sm:px-4 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
               {/* Import configuration (category + contract) */}
-              <div className="flex flex-wrap items-end gap-4">
-                <div className="flex flex-col">
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-end gap-4 w-full sm:w-auto">
+                <div className="flex flex-col min-w-0 flex-1 sm:flex-initial sm:min-w-[200px]">
                   <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
                     {t('finance.import_category')}
                   </span>
@@ -1149,7 +1149,7 @@ export default function FinanceDashboard() {
                     <select
                       value={selectedImportCategoryId}
                       onChange={(e) => setSelectedImportCategoryId(e.target.value)}
-                      className="min-w-[220px] pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
+                      className="w-full min-w-0 sm:min-w-[200px] pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
                     >
                       <option value="">{t('finance.select_category')}</option>
                       {expenseCategories.map(cat => (
@@ -1160,7 +1160,7 @@ export default function FinanceDashboard() {
                   </div>
                 </div>
 
-                <div className="flex flex-col">
+                <div className="flex flex-col min-w-0 flex-1 sm:flex-initial sm:min-w-[220px]">
                   <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
                     {t('finance.import_contract')}
                   </span>
@@ -1168,7 +1168,7 @@ export default function FinanceDashboard() {
                     <select
                       value={selectedImportContractId}
                       onChange={(e) => setSelectedImportContractId(e.target.value)}
-                      className="min-w-[260px] max-w-xs pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
+                      className="w-full min-w-0 sm:min-w-[220px] pr-9 px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-green-500/20 focus:border-green-500 bg-white shadow-sm appearance-none"
                     >
                       <option value="">{t('finance.select_contract') || 'Without contract'}</option>
                       {contracts.map((contract) => {
@@ -1191,17 +1191,17 @@ export default function FinanceDashboard() {
               </div>
 
               {/* Actions: template, import, bulk delete, add */}
-              <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center justify-end gap-3 w-full sm:w-auto">
                 <button
                   onClick={handleDownloadTemplate}
-                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                  className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors w-full sm:w-auto"
                 >
-                  <FaDownload className="w-4 h-4" />
-                  <span>{t('finance.download_template') || 'Download Template'}</span>
+                  <FaDownload className="w-4 h-4 flex-shrink-0" />
+                  <span className="truncate">{t('finance.download_template') || 'Download Template'}</span>
                 </button>
 
-                <label className={`flex items-center space-x-2 ${importing ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors cursor-pointer`}>
-                  <FaFileExcel className="w-4 h-4" />
+                <label className={`flex items-center justify-center space-x-2 ${importing ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'} text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors cursor-pointer w-full sm:w-auto`}>
+                  <FaFileExcel className="w-4 h-4 flex-shrink-0" />
                   <span>{importing ? t('finance.importing') : t('finance.import_excel')}</span>
                   <input
                     type="file"
@@ -1214,18 +1214,18 @@ export default function FinanceDashboard() {
 
                 <button
                   onClick={handleDeleteAllExpenses}
-                  className="flex items-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                  className="flex items-center justify-center space-x-2 bg-red-100 hover:bg-red-200 text-red-600 px-4 py-2 rounded-md font-medium shadow-sm transition-colors w-full sm:w-auto"
                   disabled={expenses.length === 0}
                 >
-                  <FaTrash className="w-4 h-4" />
+                  <FaTrash className="w-4 h-4 flex-shrink-0" />
                   <span>{t('finance.remove_all')}</span>
                 </button>
 
                 <button
                   onClick={() => handleOpenExpenseModal()}
-                  className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors"
+                  className="flex items-center justify-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md font-medium shadow-sm transition-colors w-full sm:w-auto"
                 >
-                  <FaPlus className="w-4 h-4" />
+                  <FaPlus className="w-4 h-4 flex-shrink-0" />
                   <span>{t('finance.add_expense')}</span>
                 </button>
               </div>
