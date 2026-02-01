@@ -8,11 +8,11 @@ import { getCurrentUser } from '@/lib/auth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getProjectById, updateProject } from '@/lib/db';
 import { getConstructionServices, Service } from '@/lib/services';
-import { HiArrowLeft, HiInformationCircle, HiCheckCircle, HiSave, HiCheck } from 'react-icons/hi';
-import { FaDollarSign } from 'react-icons/fa';
-import { MdCalculate } from 'react-icons/md';
+import { HiArrowLeft, HiInformationCircle, HiCheckCircle, HiSave, HiCheck, HiExclamation, HiExclamationCircle } from 'react-icons/hi';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
 import { toast } from 'react-toastify';
+
+export type ServiceStatusType = 'done' | 'warning' | 'problem';
 
 export default function ProjectServicesPage() {
   const router = useRouter();
@@ -21,6 +21,7 @@ export default function ProjectServicesPage() {
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
+  const [serviceStatuses, setServiceStatuses] = useState<Record<string, { status: ServiceStatusType; comment?: string }>>({});
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [constructionServices, setConstructionServices] = useState<Service[]>([]);
@@ -43,6 +44,9 @@ export default function ProjectServicesPage() {
   useEffect(() => {
     if (project?.selectedServices) {
       setSelectedServices(project.selectedServices);
+    }
+    if (project?.serviceStatuses) {
+      setServiceStatuses(project.serviceStatuses);
     }
   }, [project]);
 
@@ -89,20 +93,38 @@ export default function ProjectServicesPage() {
     setSaveSuccess(false);
   };
 
+  const handleSetStatus = (serviceId: number, status: ServiceStatusType, comment?: string) => {
+    setServiceStatuses(prev => ({
+      ...prev,
+      [String(serviceId)]: { status, comment },
+    }));
+    setSaveSuccess(false);
+  };
+
   const handleSaveServices = async () => {
     if (!project) return;
 
     setSaving(true);
     setSaveSuccess(false);
     try {
+      // Firebase rejects undefined - remove comment when empty/undefined
+      const sanitizedStatuses: Record<string, { status: ServiceStatusType; comment?: string }> = {};
+      Object.entries(serviceStatuses).forEach(([key, val]) => {
+        sanitizedStatuses[key] = val.comment !== undefined && val.comment !== ''
+          ? { status: val.status, comment: val.comment }
+          : { status: val.status };
+      });
+
       await updateProject(project.id, {
         selectedServices: selectedServices,
+        serviceStatuses: sanitizedStatuses,
       });
 
       // Update local project state
       setProject({
         ...project,
         selectedServices: selectedServices,
+        serviceStatuses: sanitizedStatuses,
       });
 
       setSaveSuccess(true);
@@ -138,7 +160,6 @@ export default function ProjectServicesPage() {
   }, {} as Record<string, Service[]>);
 
   const selectedServicesList = constructionServices.filter(s => selectedServices.includes(s.id));
-  const totalSelectedCost = selectedServicesList.length * 6;
 
   // Helper function to format translation with count
   const formatTranslation = (key: string, count?: number) => {
@@ -192,9 +213,9 @@ export default function ProjectServicesPage() {
           </div>
         </div>
 
-        {/* Statistics Cards */}
+        {/* Statistics Card */}
         <div className="bg-white shadow-lg rounded-lg p-6 mb-6 border-2 border-indigo-100">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4 mb-6">
             <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border-2 border-blue-200 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-sm font-semibold text-blue-700 uppercase tracking-wide">
@@ -205,33 +226,6 @@ export default function ProjectServicesPage() {
               <p className="text-4xl font-bold text-blue-800">{selectedServices.length}</p>
               <p className="text-xs text-blue-600 mt-1">
                 {formatTranslation('foreman.out_of_services', constructionServices.length)}
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-5 border-2 border-green-200 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-green-700 uppercase tracking-wide">
-                  {t('foreman.service_cost')}
-                </p>
-                <FaDollarSign className="w-6 h-6 text-green-500" />
-              </div>
-              <p className="text-4xl font-bold text-green-800">$6</p>
-              <p className="text-xs text-green-600 mt-1">{t('foreman.per_service')}</p>
-            </div>
-
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border-2 border-purple-200 shadow-sm">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold text-purple-700 uppercase tracking-wide">
-                  {t('foreman.total_cost')}
-                </p>
-                <MdCalculate className="w-6 h-6 text-purple-500" />
-              </div>
-              <p className="text-4xl font-bold text-purple-800">${totalSelectedCost}</p>
-              <p className="text-xs text-purple-600 mt-1">
-                {selectedServices.length > 0
-                  ? `${selectedServices.length} × $6 = $${totalSelectedCost}`
-                  : t('foreman.no_services_selected')
-                }
               </p>
             </div>
           </div>
@@ -279,7 +273,6 @@ export default function ProjectServicesPage() {
         <div className="space-y-6">
           {Object.entries(servicesByStage).map(([stage, services]) => {
             const stageSelectedServices = services.filter(s => selectedServices.includes(s.id));
-            const stageTotal = stageSelectedServices.length * 6;
 
             return (
               <div key={stage} className="bg-white shadow-lg rounded-lg overflow-hidden border border-gray-200">
@@ -289,6 +282,7 @@ export default function ProjectServicesPage() {
                 <div className="divide-y divide-gray-200">
                   {services.map((service) => {
                     const isSelected = selectedServices.includes(service.id);
+                    const statusData = serviceStatuses[String(service.id)];
                     return (
                       <div
                         key={service.id}
@@ -297,32 +291,21 @@ export default function ProjectServicesPage() {
                             : 'hover:bg-gray-50'
                           }`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1 flex items-center space-x-4">
-                            <span className={`text-sm font-bold min-w-[50px] ${isSelected ? 'text-green-700' : 'text-indigo-600'
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                          <div className="flex flex-1 items-center space-x-4 min-w-0">
+                            <span className={`text-sm font-bold min-w-[50px] flex-shrink-0 ${isSelected ? 'text-green-700' : 'text-indigo-600'
                               }`}>
                               #{service.id}
                             </span>
-                            <div className="flex-1">
+                            <div className="flex-1 min-w-0">
                               <p className={`font-medium ${isSelected ? 'text-green-900' : 'text-gray-900'
                                 }`}>
                                 {getServiceName(service)}
                               </p>
                             </div>
-                            {isSelected && (
-                              <span className="px-3 py-1 bg-green-200 text-green-800 text-xs font-bold rounded-full border border-green-300">
-                                {t('foreman.selected')}
-                              </span>
-                            )}
-                          </div>
-                          <div className="ml-4 flex items-center space-x-4">
-                            <div className="text-right">
-                              <span className="text-lg font-bold text-green-600">${service.cost}</span>
-                              <p className="text-xs text-gray-500">{t('foreman.per_service')}</p>
-                            </div>
                             <button
                               onClick={() => handleToggleService(service.id)}
-                              className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl transition-all transform hover:scale-110 active:scale-95 shadow-md ${isSelected
+                              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-all transform hover:scale-110 active:scale-95 shadow-md ${isSelected
                                   ? 'bg-red-500 hover:bg-red-600 text-white'
                                   : 'bg-indigo-500 hover:bg-indigo-600 text-white'
                                 }`}
@@ -331,20 +314,60 @@ export default function ProjectServicesPage() {
                               {isSelected ? '−' : '+'}
                             </button>
                           </div>
+                          {isSelected && (
+                            <div className="flex-shrink-0 flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px]">
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => handleSetStatus(service.id, 'done')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'done'
+                                      ? 'bg-green-600 text-white shadow'
+                                      : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                    }`}
+                                >
+                                  <HiCheckCircle className="w-4 h-4" />
+                                  {t('foreman.status_done')}
+                                </button>
+                                <button
+                                  onClick={() => handleSetStatus(service.id, 'warning')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'warning'
+                                      ? 'bg-amber-600 text-white shadow'
+                                      : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                    }`}
+                                >
+                                  <HiExclamation className="w-4 h-4" />
+                                  {t('foreman.status_warning')}
+                                </button>
+                                <button
+                                  onClick={() => handleSetStatus(service.id, 'problem')}
+                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'problem'
+                                      ? 'bg-red-600 text-white shadow'
+                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                    }`}
+                                >
+                                  <HiExclamationCircle className="w-4 h-4" />
+                                  {t('foreman.status_problem')}
+                                </button>
+                              </div>
+                              {(statusData?.status === 'warning' || statusData?.status === 'problem') && (
+                                <input
+                                  type="text"
+                                  placeholder={t('foreman.status_comment_placeholder')}
+                                  value={statusData?.comment ?? ''}
+                                  onChange={(e) => handleSetStatus(service.id, statusData!.status, e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                />
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
                 <div className="bg-gray-50 px-6 py-4 border-t-2 border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-gray-700">
-                      {t('foreman.stage_total')} ({stageSelectedServices.length} / {services.length}):
-                    </span>
-                    <span className="text-xl font-bold text-indigo-600">
-                      ${stageTotal}
-                    </span>
-                  </div>
+                  <span className="text-sm font-semibold text-gray-700">
+                    {t('foreman.stage_total')} ({stageSelectedServices.length} / {services.length})
+                  </span>
                 </div>
               </div>
             );

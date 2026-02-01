@@ -49,6 +49,7 @@ export interface Project {
   status: 'active' | 'completed';
   createdAt: Date;
   selectedServices?: number[];  // Array of service IDs that will be used for this project
+  serviceStatuses?: Record<string, { status: 'done' | 'warning' | 'problem'; comment?: string }>;  // Foreman status per service (key = serviceId)
 }
 
 export interface Draft {

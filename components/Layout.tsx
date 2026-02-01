@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { signOut, subscribeToAuthChanges } from '@/lib/auth';
+import dynamic from 'next/dynamic';
 import { User } from '@/types';
-import WarningBell from './WarningBell';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+
+const WarningBell = dynamic(() => import('./WarningBell'), { ssr: false });
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -182,19 +182,6 @@ export default function Layout({ children }: LayoutProps) {
           <div className="max-w-7xl mx-auto">{children}</div>
         </div>
       </main>
-
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-      />
     </div>
   );
 }
