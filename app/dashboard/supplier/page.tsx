@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { SupplyRequest } from '@/types';
+import { SupplyRequest, FinanceCategory, User } from '@/types';
 import { getCurrentUser } from '@/lib/auth';
-import { getSupplyRequests, updateSupplyRequestStatus } from '@/lib/db';
+import { getSupplyRequests, updateSupplyRequestStatus, createExpense, getFinanceCategories } from '@/lib/db';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-toastify';
 import { 
@@ -44,6 +44,8 @@ export default function SupplierDashboard() {
   const [rejectReason, setRejectReason] = useState('');
   const [supplierNote, setSupplierNote] = useState('');
   const [itemPrices, setItemPrices] = useState<Record<number, string>>({});
+  const [materialCategory, setMaterialCategory] = useState<FinanceCategory | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const router = useRouter();
   const { t } = useLanguage();
 
@@ -59,6 +61,8 @@ export default function SupplierDashboard() {
         router.push(`/dashboard/${user.role}`);
         return;
       }
+      setCurrentUser(user);
+      await fetchMaterialCategory();
       await fetchRequests();
     };
     init();
@@ -77,15 +81,51 @@ export default function SupplierDashboard() {
     }
   };
 
-  const handleStatusUpdate = async (id: string, status: SupplyRequest['status'], note?: string, reason?: string, prices?: number[]) => {
+  useEffect(() => {
+    const updateViewport = () => {
+      if (typeof window !== 'undefined') {
+        setIsMobileCardView(window.innerWidth < 640);
+      }
+    };
+    updateViewport();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updateViewport);
+      return () => window.removeEventListener('resize', updateViewport);
+    }
+    return;
+  }, []);
+
+  const fetchMaterialCategory = async () => {
+    try {
+      const categories = await getFinanceCategories('expense');
+      const materialCat = categories.find(cat => cat.name?.trim().toLowerCase() === 'materialarga harajat'.toLowerCase());
+      setMaterialCategory(materialCat ?? null);
+      if (!materialCat) {
+        toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+      }
+    } catch (error) {
+      console.error('Error fetching finance categories:', error);
+      toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+    }
+  };
+
+  const handleStatusUpdate = async (
+    id: string,
+    status: SupplyRequest['status'],
+    note?: string,
+    reason?: string,
+    prices?: number[],
+    expenseId?: string
+  ) => {
     setUpdatingId(id);
     try {
-      await updateSupplyRequestStatus(id, status, note, reason, prices);
+      await updateSupplyRequestStatus(id, status, note, reason, prices, expenseId);
       toast.success(t(`supplier.status_${status}`) || t('supplier.accepted'));
       await fetchRequests();
       setShowRejectModal(false);
       setShowNoteModal(false);
       setShowAcceptModal(false);
+      setShowInfoModal(false);
       setRejectReason('');
       setSupplierNote('');
       setItemPrices({});
@@ -107,6 +147,11 @@ export default function SupplierDashboard() {
     setSelectedRequest(req);
     setSupplierNote(req.supplierNote || '');
     setShowNoteModal(true);
+  };
+
+  const handleMoreInfo = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    setShowInfoModal(true);
   };
 
   const handleAcceptClick = (req: SupplyRequest) => {
@@ -131,7 +176,58 @@ export default function SupplierDashboard() {
       toast.warning(t('supplier.price_required') || 'Please enter price for each material');
       return;
     }
-    await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices);
+    if (!materialCategory) {
+      toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+      return;
+    }
+    if (!currentUser) {
+      toast.error(t('supplier.user_missing') || 'Current user not found');
+      return;
+    }
+
+    const totalAmount = prices.reduce((sum, price) => sum + price, 0);
+    const expenseComment = [
+      `Contract: Delivery contract`,
+      '',
+      `${t('supplier.expense_items_title') || 'Items'}:`,
+      ...selectedRequest.items.map((item, idx) => `${idx + 1}. ${item} – ${prices[idx].toLocaleString('uz-UZ')} UZS`)
+    ].join('\n');
+    const expenseItemName = `${selectedRequest.items[0]}${selectedRequest.items.length > 1 ? ` +${selectedRequest.items.length - 1}` : ''}`;
+    try {
+      for (let idx = 0; idx < selectedRequest.items.length; idx++) {
+        const expenseName = selectedRequest.items[idx];
+        const expenseAmount = prices[idx];
+
+        const commentParts = [
+          `Contract: Delivery contract ${selectedRequest.projectName || selectedRequest.projectId}`,
+          selectedRequest.foremanName ? `Foreman: ${selectedRequest.foremanName}` : '',
+          selectedRequest.projectLocation ? `Location: ${selectedRequest.projectLocation}` : '',
+          '',
+          `${t('supplier.expense_item_detail') || 'Item'}: ${expenseName}`,
+          `${t('supplier.expense_item_price') || 'Price'}: ${expenseAmount.toLocaleString('uz-UZ')} UZS`,
+        ].filter(Boolean);
+
+        await createExpense({
+          projectId: selectedRequest.projectId,
+          projectName: selectedRequest.projectName || 'Delivery contract',
+          name: expenseName,
+          categoryId: materialCategory.id,
+          categoryName: materialCategory.name,
+          paymentMethod: 'cash',
+          amount: expenseAmount,
+          toWhom: t('supplier.supplier_label') || 'Supplier',
+          createdBy: currentUser.id,
+          createdByName: currentUser.name,
+          approvalStatus: 'pending',
+          comment: commentParts.join('\n'),
+        });
+      }
+      toast.success(t('supplier.expense_created') || 'Expense recorded successfully');
+      await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices);
+    } catch (error) {
+      console.error('Error creating expense from supply request:', error);
+      toast.error(t('supplier.expense_create_error') || 'Failed to create expense for this order');
+    }
   };
 
   const getStatusColor = (status: SupplyRequest['status']) => {
@@ -247,13 +343,21 @@ export default function SupplierDashboard() {
               const overdue = isOverdue(req.deadline);
               
               return (
-                <div key={req.id} className="bg-white rounded-lg shadow-lg border-2 border-gray-200 hover:border-indigo-300 transition-all">
-                  <div className="p-6">
+                <div
+                  key={req.id}
+                  className={`
+                    bg-white rounded-lg shadow-lg border-2 border-gray-200 hover:border-indigo-300 transition-all
+                    ${isMobileCardView ? 'p-4' : 'p-6'}
+                  `}
+                >
+                  <div className={isMobileCardView ? 'space-y-4' : ''}>
                     {/* Header */}
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <h3 className="text-xl font-bold text-gray-900">{req.projectName || req.projectId}</h3>
+                        <div className={`flex ${isMobileCardView ? 'flex-col space-y-2' : 'items-center space-x-3'} mb-2`}>
+                          <h3 className={`font-bold text-gray-900 ${isMobileCardView ? 'text-lg' : 'text-xl'}`}>
+                            {req.projectName || req.projectId}
+                          </h3>
                           <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(req.status)}`}>
                             {getStatusIcon(req.status)}
                             <span className="ml-1">{t(`supplier.status_${req.status}`) || req.status}</span>
@@ -360,24 +464,41 @@ export default function SupplierDashboard() {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
+                    <div
+                      className={`flex ${isMobileCardView ? 'flex-col gap-2' : 'flex-wrap gap-2'} pt-4 border-t border-gray-200`}
+                    >
                       {req.status === 'pending' && (
                         <>
                           <button
                             onClick={() => handleAcceptClick(req)}
                             disabled={updatingId === req.id}
-                            className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2
+                            `}
                           >
                             <FaCheck className="w-4 h-4" />
-                            <span>{t('supplier.accept_order')}</span>
+                            <span>{isMobileCardView ? t('supplier.accept_mobile') : t('supplier.accept_order')}</span>
                           </button>
                           <button
                             onClick={() => handleReject(req)}
                             disabled={updatingId === req.id}
-                            className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2
+                            `}
                           >
                             <FaTimes className="w-4 h-4" />
-                            <span>{t('supplier.reject_order') || 'Reject'}</span>
+                            <span>{isMobileCardView ? t('supplier.reject_mobile') : t('supplier.reject_order') || 'Reject'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleMoreInfo(req)}
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 border border-gray-300 hover:bg-gray-200
+                            `}
+                          >
+                            <span>{isMobileCardView ? t('supplier.more_info_mobile') : t('supplier.more_info') || 'More info'}</span>
                           </button>
                         </>
                       )}
@@ -582,6 +703,73 @@ export default function SupplierDashboard() {
                     {t('foreman.cancel') || 'Cancel'}
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Info Modal */}
+        {showInfoModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-xl font-semibold mb-4">
+                {t('supplier.info_title') || 'Order details'}
+              </h2>
+              <div className="space-y-3 text-sm text-gray-700">
+                <p>
+                  <strong>{t('supplier.project') || 'Project'}:</strong>{' '}
+                  {selectedRequest.projectName || selectedRequest.projectId}
+                </p>
+                <p>
+                  <strong>{t('supplier.foreman') || 'Foreman'}:</strong>{' '}
+                  {selectedRequest.foremanName}
+                </p>
+                <p>
+                  <strong>{t('supplier.location') || 'Location'}:</strong>{' '}
+                  {selectedRequest.projectLocation || t('supplier.no_location')}
+                </p>
+                <p>
+                  <strong>{t('supplier.deadline') || 'Deadline'}:</strong>{' '}
+                  {new Date(selectedRequest.deadline).toLocaleString()}
+                </p>
+              </div>
+              <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="font-semibold text-gray-900 mb-2">{t('supplier.items')}</p>
+                <ul className="space-y-2">
+                  {selectedRequest.items.map((item, idx) => (
+                    <li key={idx} className="flex justify-between text-sm text-gray-700">
+                      <span>{item}</span>
+                      {selectedRequest.itemPrices?.[idx] != null && selectedRequest.itemPrices[idx] > 0 && (
+                        <span className="font-semibold text-indigo-600">
+                          {selectedRequest.itemPrices[idx].toLocaleString('uz-UZ')} UZS
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-gray-600">
+                {selectedRequest.note && (
+                  <p>
+                    <strong>{t('supplier.foreman_note') || 'Foreman note'}:</strong> {selectedRequest.note}
+                  </p>
+                )}
+                {selectedRequest.supplierNote && (
+                  <p>
+                    <strong>{t('supplier.supplier_note') || 'Supplier note'}:</strong> {selectedRequest.supplierNote}
+                  </p>
+                )}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowInfoModal(false);
+                    setSelectedRequest(null);
+                  }}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold"
+                >
+                  {t('supplier.info_close') || 'Close'}
+                </button>
               </div>
             </div>
           </div>

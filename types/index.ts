@@ -113,6 +113,7 @@ export interface SupplyRequest {
   foremanName: string;
   items: string[];
   itemPrices?: number[];  // Price for each material (supplier fills when accepting)
+  expenseId?: string;
   deadline: Date;
   status: SupplyRequestStatus;
   note?: string;

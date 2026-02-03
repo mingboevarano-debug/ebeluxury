@@ -257,7 +257,8 @@ export const updateSupplyRequestStatus = async (
   status: SupplyRequestStatus,
   supplierNote?: string,
   rejectedReason?: string,
-  itemPrices?: number[]
+  itemPrices?: number[],
+  expenseId?: string
 ): Promise<void> => {
   const requestRef = doc(db, 'supplyRequests', id);
   const updateData: any = { status };
@@ -272,6 +273,10 @@ export const updateSupplyRequestStatus = async (
 
   if (itemPrices && itemPrices.length > 0) {
     updateData.itemPrices = itemPrices;
+  }
+
+  if (expenseId) {
+    updateData.expenseId = expenseId;
   }
 
   if (status === 'accepted') {
@@ -586,12 +591,8 @@ export const createFinanceCategory = async (category: Omit<FinanceCategory, 'id'
 
 export const getFinanceCategories = async (type?: 'profit' | 'expense'): Promise<FinanceCategory[]> => {
   const categoriesRef = collection(db, 'financeCategories');
-  let q = query(categoriesRef, orderBy('createdAt', 'desc'));
-  if (type) {
-    q = query(categoriesRef, where('type', '==', type), orderBy('createdAt', 'desc'));
-  }
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => {
+  const snapshot = await getDocs(query(categoriesRef, orderBy('createdAt', 'desc')));
+  const categories = snapshot.docs.map(doc => {
     const data = doc.data();
     return {
       id: doc.id,
@@ -599,6 +600,7 @@ export const getFinanceCategories = async (type?: 'profit' | 'expense'): Promise
       createdAt: data.createdAt?.toDate?.() || new Date(),
     };
   }) as FinanceCategory[];
+  return type ? categories.filter(cat => cat.type === type) : categories;
 };
 
 export const updateFinanceCategory = async (id: string, updates: Partial<FinanceCategory>): Promise<void> => {
