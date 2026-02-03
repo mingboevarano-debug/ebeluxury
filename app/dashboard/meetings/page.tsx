@@ -20,6 +20,7 @@ import {
 import { MdLocationOn, MdAccessTime } from 'react-icons/md';
 import { toast } from 'react-toastify';
 import MapPicker from '@/components/MapPicker';
+import YandexMapModal from '@/components/YandexMapModal';
 
 // Default center (Tashkent, Uzbekistan)
 const DEFAULT_CENTER = { lat: 41.2995, lng: 69.2401 };
@@ -36,6 +37,7 @@ export default function MeetingsPage() {
   const [meetingDescription, setMeetingDescription] = useState('');
   const [meetingDateTime, setMeetingDateTime] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showYandexMapModal, setShowYandexMapModal] = useState(false);
   const { t } = useLanguage();
 
   useEffect(() => {
@@ -79,6 +81,11 @@ export default function MeetingsPage() {
   const handleLocationSelect = (location: { lat: number; lng: number }) => {
     setSelectedLocation(location);
     setMapCenter(location);
+  };
+
+  const handleYandexMapSelect = (location: { lat: number; lng: number }) => {
+    handleLocationSelect(location);
+    setShowYandexMapModal(false);
   };
 
   const handleCreateMeeting = async (e: React.FormEvent) => {
@@ -444,6 +451,19 @@ export default function MeetingsPage() {
                       <label className="block text-sm font-semibold text-gray-700 mb-2">
                         {t('meetings.select_location') || 'Select Location on Map'} *
                       </label>
+                      <div className="mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setShowYandexMapModal(true)}
+                          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-600 hover:to-amber-700 text-white font-semibold rounded-lg shadow-md transition-all"
+                        >
+                          <FaMap className="w-4 h-4" />
+                          <span>{t('meetings.select_with_yandex') || 'Select with Yandex Maps'}</span>
+                        </button>
+                        <p className="mt-2 text-xs text-gray-500">
+                          {t('meetings.yandex_hint') || 'Open Yandex Maps, navigate to location, copy link and paste to get coordinates'}
+                        </p>
+                      </div>
                       <MapPicker
                         center={mapCenter}
                         zoom={mapZoom}
@@ -452,7 +472,7 @@ export default function MeetingsPage() {
                       />
                       <div className="mt-2 flex items-center space-x-2 text-xs text-gray-600">
                         <FaMapMarkerAlt className="w-3 h-3" />
-                        <span>{t('meetings.click_to_select') || 'Click anywhere on the map to select location'}</span>
+                        <span>{t('meetings.click_to_select') || 'Or click on the map above to select location'}</span>
                       </div>
                     </div>
 
@@ -521,6 +541,14 @@ export default function MeetingsPage() {
             </div>
           </div>
         )}
+
+        {/* Yandex Maps Modal */}
+        <YandexMapModal
+          isOpen={showYandexMapModal}
+          onClose={() => setShowYandexMapModal(false)}
+          onLocationSelect={handleYandexMapSelect}
+          initialLocation={selectedLocation || mapCenter}
+        />
       </div>
     </Layout>
   );

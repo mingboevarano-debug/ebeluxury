@@ -3,11 +3,11 @@
 import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { Attendance } from '@/types';
-import { getCurrentUser } from '@/lib/auth';
+import { subscribeToAuthChanges } from '@/lib/auth';
 import { getAttendance, createAttendance, updateAttendanceCheckOut } from '@/lib/db';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { OFFICE_LOCATION, isWithinOfficeRadius, getAttendanceStatus } from '@/lib/officeConfig';
-import { format, isSameDay, startOfDay, parseISO } from 'date-fns';
+import { OFFICE_LOCATION, isWithinOfficeRadius, getAttendanceStatus, getCurrentLocation as getGeoLocation, verifyOfficeLocation } from '@/lib/officeConfig';
+import { format, startOfDay } from 'date-fns';
 import { 
   FaCheckCircle, 
   FaTimesCircle, 
@@ -15,7 +15,6 @@ import {
   FaMapMarkerAlt,
   FaSignInAlt,
   FaSignOutAlt,
-  FaLocationArrow,
   FaCalendarAlt
 } from 'react-icons/fa';
 import { MdLocationOn, MdAccessTime, MdCheckCircle } from 'react-icons/md';
@@ -29,96 +28,116 @@ export default function AttendancePage() {
   const [currentLocation, setCurrentLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [todayAttendance, setTodayAttendance] = useState<Attendance | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+  const [showLocationCheck, setShowLocationCheck] = useState(false);
+  const [locationCheckResult, setLocationCheckResult] = useState<{
+    userLat: number;
+    userLng: number;
+    distance: number;
+    withinRadius: boolean;
+    accuracy?: number;
+    accuracyAcceptable?: boolean;
+  } | null>(null);
+  const [checkingLocation, setCheckingLocation] = useState(false);
   const { t } = useLanguage();
 
   useEffect(() => {
-    fetchAttendance();
-    checkTodayAttendance();
-  }, []);
+    const unsubscribe = subscribeToAuthChanges(async (user) => {
+      if (!user) {
+        setCurrentUser(null);
+        setAttendanceRecords([]);
+        setTodayAttendance(null);
+        setLoading(false);
+        return;
+      }
+      setCurrentUser(user);
+      try {
+        const records = await getAttendance(user.id);
+        setAttendanceRecords(records);
+        const today = new Date();
+        const todayRecords = await getAttendance(user.id, today);
+        setTodayAttendance(todayRecords.length > 0 ? todayRecords[0] : null);
+      } catch (error) {
+        console.error('Error fetching attendance:', error);
+        toast.error(t('attendance.load_error') || 'Failed to load attendance records');
+      } finally {
+        setLoading(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [t]);
 
   const fetchAttendance = async () => {
+    if (!currentUser) return;
     try {
-      const user = await getCurrentUser();
-      if (!user) return;
-
-      const records = await getAttendance(user.id);
+      const records = await getAttendance(currentUser.id);
       setAttendanceRecords(records);
     } catch (error) {
       console.error('Error fetching attendance:', error);
       toast.error(t('attendance.load_error') || 'Failed to load attendance records');
-    } finally {
-      setLoading(false);
     }
   };
 
   const checkTodayAttendance = async () => {
+    if (!currentUser) return;
     try {
-      const user = await getCurrentUser();
-      if (!user) return;
-
       const today = new Date();
-      const records = await getAttendance(user.id, today);
-      if (records.length > 0) {
-        setTodayAttendance(records[0]);
-      }
+      const records = await getAttendance(currentUser.id, today);
+      setTodayAttendance(records.length > 0 ? records[0] : null);
     } catch (error) {
       console.error('Error checking today attendance:', error);
     }
   };
 
-  const getCurrentLocation = (): Promise<{ lat: number; lng: number }> => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported by your browser'));
-        return;
-      }
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
-          reject(new Error(`Location error: ${error.message}`));
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      );
-    });
+  const handleCheckLocation = async () => {
+    setShowLocationCheck(true);
+    setLocationCheckResult(null);
+    setCheckingLocation(true);
+    try {
+      const loc = await getGeoLocation();
+      const result = verifyOfficeLocation(loc.lat, loc.lng, loc.accuracy);
+      setLocationCheckResult({
+        userLat: result.lat,
+        userLng: result.lng,
+        distance: result.distance,
+        withinRadius: result.withinRadius,
+        accuracy: result.accuracy ?? undefined,
+        accuracyAcceptable: result.accuracyAcceptable,
+      });
+    } catch (error: any) {
+      toast.error(error.message || t('attendance.location_error'));
+      setShowLocationCheck(false);
+    } finally {
+      setCheckingLocation(false);
+    }
   };
 
   const handleCheckIn = async () => {
+    if (!currentUser) {
+      toast.error('User not found');
+      return;
+    }
     setCheckingIn(true);
     setLocationError(null);
 
     try {
-      const user = await getCurrentUser();
-      if (!user) {
-        toast.error('User not found');
+      // Get current location (shared high-accuracy logic)
+      const loc = await getGeoLocation();
+      const result = verifyOfficeLocation(loc.lat, loc.lng, loc.accuracy);
+      setCurrentLocation({ lat: result.lat, lng: result.lng });
+
+      // Reject if GPS accuracy is too poor to trust (avoids false positives when far away)
+      if (!result.accuracyAcceptable) {
+        setLocationError(
+          t('attendance.gps_accuracy_poor') || `GPS accuracy is too poor (${result.accuracy ? Math.round(result.accuracy) : '?'}m). Please enable high-accuracy location and try again.`
+        );
+        toast.warning(t('attendance.location_not_verified') || 'Location verification failed.');
         return;
       }
 
-      // Get current location
-      const location = await getCurrentLocation();
-      setCurrentLocation(location);
-
-      // Verify location
-      const isAtOffice = isWithinOfficeRadius(location.lat, location.lng);
-      
-      if (!isAtOffice) {
-        const distance = Math.sqrt(
-          Math.pow(location.lat - OFFICE_LOCATION.latitude, 2) +
-          Math.pow(location.lng - OFFICE_LOCATION.longitude, 2)
-        ) * 111000; // Rough conversion to meters
-
+      if (!result.withinRadius) {
         setLocationError(
-          t('attendance.not_at_office') || 
-          `You are not at the office. Distance: ${Math.round(distance)}m. Office location: ${OFFICE_LOCATION.latitude.toFixed(6)}, ${OFFICE_LOCATION.longitude.toFixed(6)}`
+          `${t('attendance.not_at_office') || 'You are not at the office'} — ${Math.round(result.distance)}m ${t('attendance.away') || 'away'}. ${t('attendance.office_coords') || 'Office'}: ${OFFICE_LOCATION.latitude.toFixed(6)}, ${OFFICE_LOCATION.longitude.toFixed(6)}`
         );
         toast.warning(t('attendance.location_not_verified') || 'Location verification failed. You may not be at the office.');
         return;
@@ -130,7 +149,7 @@ export default function AttendancePage() {
 
       // Check if already checked in today
       const today = startOfDay(new Date());
-      const existingRecords = await getAttendance(user.id, today);
+      const existingRecords = await getAttendance(currentUser.id, today);
       if (existingRecords.length > 0 && existingRecords[0].checkInTime) {
         toast.warning(t('attendance.already_checked_in') || 'You have already checked in today');
         return;
@@ -138,14 +157,14 @@ export default function AttendancePage() {
 
       // Create attendance record
       await createAttendance({
-        userId: user.id,
-        userName: user.name,
+        userId: currentUser.id,
+        userName: currentUser.name,
         date: today,
         checkInTime: now,
         status: status,
         location: {
-          latitude: location.lat,
-          longitude: location.lng,
+          latitude: result.lat,
+          longitude: result.lng,
         },
         verified: true,
       });
@@ -173,22 +192,21 @@ export default function AttendancePage() {
       return;
     }
 
+    if (!currentUser) {
+      toast.error('User not found');
+      return;
+    }
     setCheckingOut(true);
     setLocationError(null);
 
     try {
-      const user = await getCurrentUser();
-      if (!user) {
-        toast.error('User not found');
-        return;
-      }
 
-      // Get current location
-      const location = await getCurrentLocation();
-      setCurrentLocation(location);
+      // Get current location (shared logic)
+      const loc = await getGeoLocation();
+      setCurrentLocation({ lat: loc.lat, lng: loc.lng });
 
       // Verify location (optional for checkout, but good to verify)
-      const isAtOffice = isWithinOfficeRadius(location.lat, location.lng);
+      const isAtOffice = isWithinOfficeRadius(loc.lat, loc.lng);
       
       if (!isAtOffice) {
         // Allow checkout even if not at office, but show warning
@@ -268,26 +286,111 @@ export default function AttendancePage() {
           </p>
         </div>
 
-        {/* Office Location Info */}
+        {/* Office Location Info + Check Location Button */}
         <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-4 mb-6">
-          <div className="flex items-start space-x-3">
-            <MdLocationOn className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
-            <div>
-              <h3 className="font-semibold text-blue-900 mb-1">
-                {t('attendance.office_location') || 'Office Location'}
-              </h3>
-              <p className="text-sm text-blue-700">
-                {OFFICE_LOCATION.name} - {OFFICE_LOCATION.address}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                {OFFICE_LOCATION.latitude.toFixed(6)}, {OFFICE_LOCATION.longitude.toFixed(6)}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                {t('attendance.radius') || 'Allowed radius'}: {OFFICE_LOCATION.radius}m
-              </p>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex items-start space-x-3">
+              <MdLocationOn className="w-6 h-6 text-blue-600 flex-shrink-0 mt-1" />
+              <div>
+                <h3 className="font-semibold text-blue-900 mb-1">
+                  {t('attendance.office_location') || 'Office Location'}
+                </h3>
+                <p className="text-sm text-blue-700">
+                  {OFFICE_LOCATION.name} - {OFFICE_LOCATION.address}
+                </p>
+                <p className="text-xs text-blue-600 mt-1 font-mono">
+                  {OFFICE_LOCATION.latitude.toFixed(6)}, {OFFICE_LOCATION.longitude.toFixed(6)}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  {t('attendance.radius') || 'Allowed radius'}: {OFFICE_LOCATION.radius}m
+                </p>
+              </div>
             </div>
+            <button
+              onClick={handleCheckLocation}
+              disabled={checkingLocation}
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold rounded-lg shadow transition-all flex-shrink-0"
+            >
+              <FaMapMarkerAlt className="w-4 h-4" />
+              <span>{t('attendance.check_my_location') || 'Check My Location'}</span>
+            </button>
           </div>
         </div>
+
+        {/* Location Check Modal */}
+        {showLocationCheck && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <FaMapMarkerAlt className="w-5 h-5 text-indigo-600" />
+                {t('attendance.location_check_title') || 'Location Check'}
+              </h3>
+              {checkingLocation ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+                  <span className="ml-3 text-gray-600">{t('attendance.getting_location') || 'Getting your location...'}</span>
+                </div>
+              ) : locationCheckResult ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('attendance.office_location') || 'Office'}</p>
+                      <p className="font-mono text-gray-800">{OFFICE_LOCATION.latitude.toFixed(6)}, {OFFICE_LOCATION.longitude.toFixed(6)}</p>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('attendance.your_location') || 'Your location'}</p>
+                      <p className="font-mono text-gray-800">{locationCheckResult.userLat.toFixed(6)}, {locationCheckResult.userLng.toFixed(6)}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-lg border-2 bg-gray-50">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">{t('attendance.distance') || 'Distance'}</p>
+                      <p className="text-2xl font-bold text-gray-900">{Math.round(locationCheckResult.distance)} m</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">{t('attendance.radius') || 'Allowed radius'}</p>
+                      <p className="text-2xl font-bold text-indigo-600">{OFFICE_LOCATION.radius} m</p>
+                    </div>
+                    {locationCheckResult.accuracy !== undefined && (
+                      <div>
+                        <p className="text-sm font-semibold text-gray-700">{t('attendance.gps_accuracy') || 'GPS accuracy'}</p>
+                        <p className="text-2xl font-bold text-gray-700">±{Math.round(locationCheckResult.accuracy)} m</p>
+                      </div>
+                    )}
+                  </div>
+                  {locationCheckResult.accuracyAcceptable === false && (
+                    <div className="p-3 rounded-lg border-2 bg-amber-50 border-amber-300">
+                      <p className="text-amber-800 text-sm font-medium">
+                        ⚠ {t('attendance.gps_accuracy_poor') || 'GPS accuracy is too poor to reliably verify. Check-in may be rejected.'}
+                      </p>
+                    </div>
+                  )}
+                  <div className={`p-4 rounded-lg border-2 ${locationCheckResult.withinRadius ? 'bg-green-50 border-green-300' : 'bg-red-50 border-red-300'}`}>
+                    {locationCheckResult.withinRadius ? (
+                      <p className="text-green-800 font-bold flex items-center gap-2">
+                        <FaCheckCircle className="w-5 h-5" />
+                        {t('attendance.within_radius') || '✓ Within office radius — You can check in'}
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        <p className="text-red-800 font-bold flex items-center gap-2">
+                          <FaTimesCircle className="w-5 h-5" />
+                          {t('attendance.outside_radius') || '✗ Outside office radius — You are'} {Math.round(locationCheckResult.distance)}m {t('attendance.away') || 'away'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              <button
+                onClick={() => setShowLocationCheck(false)}
+                className="mt-4 w-full py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold rounded-lg"
+              >
+                {t('foreman.close_btn') || 'Close'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Check In/Out Buttons */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

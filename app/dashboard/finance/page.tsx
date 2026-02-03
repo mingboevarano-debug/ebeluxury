@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory, LocalizedStage, Contract } from '@/types';
+import { Profit, Expense, FinanceCategory, Project, User, OfficeWaste, OfficeWasteCategory, LocalizedStage, Contract, ExpenseApprovalStatus } from '@/types';
 import {
   getProfits,
   getExpenses,
@@ -35,7 +35,25 @@ import {
 import { subscribeToAuthChanges, getCurrentUser } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
-import { FaEdit, FaTrash, FaPlus, FaTimes, FaCog, FaChartPie, FaFileExcel, FaFolder, FaDownload, FaChevronDown } from 'react-icons/fa';
+import type { IconType } from 'react-icons';
+import {
+  FaEdit,
+  FaTrash,
+  FaPlus,
+  FaTimes,
+  FaCog,
+  FaChartPie,
+  FaFileExcel,
+  FaFolder,
+  FaDownload,
+  FaChevronDown,
+  FaArrowUp,
+  FaWallet,
+  FaClock,
+  FaBalanceScale,
+  FaMoneyBillWave,
+  FaCheck
+} from 'react-icons/fa';
 import * as XLSX from 'xlsx';
 import { collection, doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -50,10 +68,79 @@ import OfficeWasteCategoryModal from '@/components/OfficeWasteCategoryModal';
 import FinanceStatistics from '@/components/FinanceStatistics';
 import { useLanguage } from '@/contexts/LanguageContext';
 
+type FinanceStatCardProps = {
+  title: string;
+  value: string;
+  suffix?: string;
+  icon?: IconType;
+  gradient: string;
+  badge?: string;
+  supporting?: string;
+  progress?: number;
+  progressLabel?: string;
+};
+
+const FinanceStatCard = ({
+  title,
+  value,
+  suffix,
+  icon: Icon,
+  gradient,
+  badge,
+  supporting,
+  progress,
+  progressLabel
+}: FinanceStatCardProps) => {
+  const normalizedProgress =
+    typeof progress === 'number' && !Number.isNaN(progress) ? Math.max(0, progress) : null;
+  const progressValue = normalizedProgress !== null ? Math.round(normalizedProgress * 100) : null;
+
+  return (
+    <div className={`relative min-h-[230px] overflow-hidden rounded-3xl p-6 sm:p-7 text-white bg-gradient-to-br ${gradient}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          {badge && (
+            <span className="inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-white/80 backdrop-blur">
+              {badge}
+            </span>
+          )}
+          <h3 className="text-lg font-semibold leading-tight">{title}</h3>
+        </div>
+        {Icon && (
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/15 text-white/90 shadow-inner backdrop-blur-sm">
+            <Icon className="h-6 w-6" />
+          </div>
+        )}
+      </div>
+      <p className="mt-7 text-4xl font-extrabold tracking-tight tabular-nums sm:text-5xl">
+        <span className="block leading-tight">{value}</span>
+        {suffix && <span className="mt-2 block text-2xl font-semibold opacity-80">{suffix}</span>}
+      </p>
+      {supporting && <p className="mt-2 text-sm text-white/80">{supporting}</p>}
+      {progressValue !== null && progressLabel && (
+        <div className="mt-5">
+          <div className="flex items-center justify-between text-xs font-medium text-white/75">
+            <span>{progressLabel}</span>
+            <span>{progressValue}%</span>
+          </div>
+          <div className="mt-1.5 h-1.5 w-full rounded-full bg-white/20">
+            <div
+              className="h-full rounded-full bg-white shadow"
+              style={{ width: `${Math.min(progressValue, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
+      <div className="pointer-events-none absolute -right-12 -bottom-10 h-32 w-32 rounded-full bg-white/15 blur-3xl" />
+      <div className="pointer-events-none absolute -left-6 -top-6 h-20 w-20 rounded-full bg-white/10 blur-2xl" />
+    </div>
+  );
+};
+
 export default function FinanceDashboard() {
   const router = useRouter();
   const { t, locale } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'profit' | 'expense' | 'categories' | 'office_waste' | 'office_waste_categories' | 'statistics' | 'contracts'>('profit');
+  const [activeTab, setActiveTab] = useState<'profit' | 'expense' | 'expense_queue' | 'categories' | 'office_waste' | 'office_waste_categories' | 'statistics' | 'contracts'>('profit');
   const [profits, setProfits] = useState<Profit[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<FinanceCategory[]>([]);
@@ -66,6 +153,7 @@ export default function FinanceDashboard() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [processingExpenseId, setProcessingExpenseId] = useState<string | null>(null);
 
   // Profit Modal State
   const [isProfitModalOpen, setIsProfitModalOpen] = useState(false);
@@ -460,6 +548,10 @@ export default function FinanceDashboard() {
         ? users.filter(u => expenseForm.selectedEmployeeIds.includes(u.id))
         : [];
 
+      // Director-created expenses are auto-approved; admin/hr-created need director approval
+      const needsDirectorApproval = user.role === 'admin' || user.role === 'hr';
+      const approvalStatus = needsDirectorApproval ? 'pending' : 'approved';
+
       const expenseData: Omit<Expense, 'id' | 'createdAt'> = {
         categoryId: expenseForm.categoryId,
         categoryName: category?.name || '',
@@ -469,6 +561,7 @@ export default function FinanceDashboard() {
         toWhom: expenseForm.toWhom.trim(),
         createdBy: user.id,
         createdByName: user.name,
+        approvalStatus,
         ...(expenseForm.projectId && { projectId: expenseForm.projectId }),
         ...(project && (() => {
           // Format project name properly to avoid concatenation mess
@@ -498,10 +591,9 @@ export default function FinanceDashboard() {
         await updateExpense(editingExpense.id, expenseData);
         toast.success(t('finance.expense_updated'));
       } else {
-        await createExpense(expenseData);
+        const newExpenseId = await createExpense(expenseData);
         toast.success(t('finance.expense_added'));
-        
-        // Send Telegram notification for new expenses
+
         try {
           await fetch('/api/telegram', {
             method: 'POST',
@@ -518,10 +610,12 @@ export default function FinanceDashboard() {
               paymentMethod: expenseData.paymentMethod,
               comment: expenseData.comment,
               stage: expenseData.stage,
+              pendingApproval: needsDirectorApproval,
+              expenseId: newExpenseId,
+              showActionButtons: needsDirectorApproval,
             }),
           });
         } catch (telegramError) {
-          // Don't show error to user if Telegram notification fails
           console.error('Failed to send Telegram notification:', telegramError);
         }
       }
@@ -558,6 +652,32 @@ export default function FinanceDashboard() {
     } catch (error: any) {
       console.error('Error deleting expense:', error);
       toast.error(error.message || t('finance.delete_expense_error'));
+    }
+  };
+
+  const handleProcessPendingExpense = async (
+    expenseId: string,
+    status: Extract<ExpenseApprovalStatus, 'approved' | 'rejected' | 'ignored'>
+  ) => {
+    if (!user) {
+      toast.error('Please sign in to continue');
+      return;
+    }
+
+    setProcessingExpenseId(expenseId);
+    try {
+      await updateExpense(expenseId, {
+        approvalStatus: status,
+        approvedBy: user.id,
+        approvedAt: new Date()
+      });
+      toast.success(t('director.expense_action_success') || 'Expense updated');
+      await fetchData();
+    } catch (error: any) {
+      console.error('Error updating expense status:', error);
+      toast.error(error.message || t('director.expense_action_error') || 'Failed to update expense');
+    } finally {
+      setProcessingExpenseId(null);
     }
   };
 
@@ -798,6 +918,10 @@ export default function FinanceDashboard() {
             }
           }
 
+          // Director-created expenses auto-approved; admin/hr need director approval
+          const needsDirectorApproval = user.role === 'admin' || user.role === 'hr';
+          const approvalStatus = needsDirectorApproval ? 'pending' : 'approved';
+
           // Build expense data
           const expenseData: Omit<Expense, 'id' | 'createdAt'> = {
             categoryId: selectedCategory.id,
@@ -808,6 +932,7 @@ export default function FinanceDashboard() {
             toWhom: source ? String(source).trim() : 'Unknown',
             createdBy: user.id,
             createdByName: user.name,
+            approvalStatus,
             ...(parsedUnitPrice && !isNaN(parsedUnitPrice) && { unitPrice: parsedUnitPrice }),
             ...(parsedQuantity && !isNaN(parsedQuantity) && { quantity: parsedQuantity }),
             ...(project && { comment: String(project).trim() }),
@@ -839,7 +964,6 @@ export default function FinanceDashboard() {
           };
           await setDoc(expenseRef, expenseDataWithDate);
           
-          // Send Telegram notification for imported expenses
           try {
             await fetch('/api/telegram', {
               method: 'POST',
@@ -856,10 +980,12 @@ export default function FinanceDashboard() {
                 paymentMethod: expenseData.paymentMethod,
                 comment: expenseData.comment,
                 stage: expenseData.stage,
+                pendingApproval: needsDirectorApproval,
+                expenseId: expenseRef.id,
+                showActionButtons: needsDirectorApproval,
               }),
             });
           } catch (telegramError) {
-            // Don't show error to user if Telegram notification fails
             console.error('Failed to send Telegram notification:', telegramError);
           }
           
@@ -928,7 +1054,12 @@ export default function FinanceDashboard() {
   const profitCategories = categories.filter(c => c.type === 'profit');
   const expenseCategories = categories.filter(c => c.type === 'expense');
   const totalProfit = profits.reduce((sum, p) => sum + p.amount, 0);
-  const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+  // Only approved expenses count (legacy expenses without status count as approved)
+  const approvedExpenses = expenses.filter(e => !e.approvalStatus || e.approvalStatus === 'approved');
+  const totalExpense = approvedExpenses.reduce((sum, e) => sum + e.amount, 0);
+  // Expenses waiting for director approval (queue)
+  const pendingExpenses = expenses.filter(e => e.approvalStatus === 'pending');
+  const totalPendingExpense = pendingExpenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = totalProfit - totalExpense;
   const totalContractPrice = contracts.reduce((sum, c) => sum + c.price, 0);
   const totalContractProfits = contracts.reduce((sum, contract) => {
@@ -936,6 +1067,74 @@ export default function FinanceDashboard() {
     return sum + contractProfits.reduce((profitSum, p) => profitSum + p.amount, 0);
   }, 0);
   const totalMoneyOnDelay = totalContractPrice - totalContractProfits;
+  const canApproveExpenses = user ? ['director', 'admin'].includes(user.role) : false;
+  const profitCoverage = totalContractPrice > 0 ? totalProfit / totalContractPrice : undefined;
+  const expenseShare = totalProfit > 0 ? totalExpense / totalProfit : undefined;
+  const pendingShare = totalExpense > 0 ? totalPendingExpense / totalExpense : undefined;
+  const delayShare = totalContractPrice > 0 ? totalMoneyOnDelay / totalContractPrice : undefined;
+
+  const statCards = [
+    {
+      id: 'totalProfit',
+      title: t('finance.total_profit'),
+      value: formatNumberWithSpaces(totalProfit.toString()),
+      suffix: ' UZS',
+      icon: FaArrowUp,
+      gradient: 'from-emerald-500 via-green-500 to-teal-500',
+      badge: `${t('finance.tab.profit')} • ${profits.length}`,
+      supporting: totalContractPrice > 0
+        ? `${t('finance.contract.price')}: ${formatNumberWithSpaces(totalContractPrice.toString())} UZS`
+        : undefined,
+      progress: profitCoverage,
+      progressLabel: t('finance.contract.price')
+    },
+    {
+      id: 'totalExpense',
+      title: t('finance.total_expense'),
+      value: formatNumberWithSpaces(totalExpense.toString()),
+      suffix: ' UZS',
+      icon: FaWallet,
+      gradient: 'from-rose-500 via-red-500 to-orange-500',
+      badge: t('finance.tab.expense'),
+      supporting: `${t('finance.total_profit')}: ${formatNumberWithSpaces(totalProfit.toString())} UZS`,
+      progress: expenseShare,
+      progressLabel: t('finance.total_profit')
+    },
+    {
+      id: 'pendingExpense',
+      title: t('finance.total_expense_pending'),
+      value: formatNumberWithSpaces(totalPendingExpense.toString()),
+      suffix: ' UZS',
+      icon: FaClock,
+      gradient: 'from-amber-500 via-orange-400 to-yellow-500',
+      badge: t('finance.expense_status.pending'),
+      supporting: `${pendingExpenses.length} ${t('finance.tab.expense')}`,
+      progress: pendingShare,
+      progressLabel: t('finance.total_expense')
+    },
+    {
+      id: 'netProfit',
+      title: t('finance.net_profit'),
+      value: formatNumberWithSpaces(netProfit.toString()),
+      suffix: ' UZS',
+      icon: FaBalanceScale,
+      gradient: netProfit >= 0 ? 'from-indigo-500 via-blue-500 to-sky-500' : 'from-rose-500 via-red-500 to-orange-500',
+      badge: netProfit >= 0 ? t('finance.tab.profit') : t('finance.tab.expense'),
+      supporting: `${t('finance.total_profit')} • ${t('finance.total_expense')}`
+    },
+    {
+      id: 'delayMoney',
+      title: t('finance.contract.money_on_delay'),
+      value: formatNumberWithSpaces(totalMoneyOnDelay.toString()),
+      suffix: ' UZS',
+      icon: FaMoneyBillWave,
+      gradient: 'from-slate-900 via-slate-800 to-slate-900',
+      badge: t('finance.tab.contracts'),
+      supporting: `${contracts.length} ${t('finance.tab.contracts')} / ${t('finance.tab.profit')} ${formatNumberWithSpaces(totalContractProfits.toString())} UZS`,
+      progress: delayShare,
+      progressLabel: t('finance.contract.price')
+    }
+  ];
 
   return (
     <Layout>
@@ -951,28 +1150,11 @@ export default function FinanceDashboard() {
           </button>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
-          <div className="bg-white p-4 sm:p-6 rounded-lg shadow border border-green-100">
-            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.total_profit')}</h3>
-            <p className="text-xl sm:text-3xl font-bold text-green-600 mt-2 overflow-x-auto">{formatNumberWithSpaces(totalProfit.toString())} UZS</p>
-          </div>
-          <div className="bg-white p-4 sm:p-6 rounded-lg shadow border border-red-100">
-            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.total_expense')}</h3>
-            <p className="text-xl sm:text-3xl font-bold text-red-600 mt-2 overflow-x-auto">{formatNumberWithSpaces(totalExpense.toString())} UZS</p>
-          </div>
-          <div className={`bg-white p-4 sm:p-6 rounded-lg shadow border ${netProfit >= 0 ? 'border-blue-100' : 'border-red-100'}`}>
-            <h3 className="text-sm sm:text-lg font-medium text-gray-500">{t('finance.net_profit')}</h3>
-            <p className={`text-xl sm:text-3xl font-bold mt-2 overflow-x-auto ${netProfit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-              {formatNumberWithSpaces(netProfit.toString())} UZS
-            </p>
-          </div>
-          <div className="bg-gray-100 p-4 sm:p-6 rounded-lg shadow border border-gray-200 sm:col-span-2 md:col-span-1">
-            <h3 className="text-sm sm:text-lg font-semibold text-gray-600 tracking-wide">{t('finance.contract.money_on_delay')}</h3>
-            <p className="text-xl sm:text-3xl font-bold mt-2 text-gray-700 overflow-x-auto">
-              {formatNumberWithSpaces(totalMoneyOnDelay.toString())} UZS
-            </p>
-          </div>
+        {/* Highlighted stats */}
+        <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {statCards.map((card) => (
+            <FinanceStatCard key={card.id} {...card} />
+          ))}
         </div>
 
         {/* Tabs - scrollable on mobile */}
@@ -995,6 +1177,16 @@ export default function FinanceDashboard() {
                 } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex-shrink-0`}
             >
               {t('finance.tab.expense')} ({expenses.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('expense_queue')}
+              className={`${activeTab === 'expense_queue'
+                ? 'border-amber-500 text-amber-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-3 sm:py-4 px-1 border-b-2 font-medium text-xs sm:text-sm flex items-center gap-2 flex-shrink-0`}
+            >
+              <FaClock className="w-4 h-4" />
+              <span>{t('finance.tab.expense_queue') || 'Expense Queue'} ({pendingExpenses.length})</span>
             </button>
             <button
               onClick={() => setActiveTab('categories')}
@@ -1048,7 +1240,88 @@ export default function FinanceDashboard() {
 
         {/* Statistics Tab */}
         {activeTab === 'statistics' && (
-          <FinanceStatistics profits={profits} expenses={expenses} />
+          <FinanceStatistics profits={profits} expenses={approvedExpenses} />
+        )}
+
+        {/* Expense Queue Tab */}
+        {activeTab === 'expense_queue' && (
+          <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="px-4 sm:px-6 py-4 border-b border-gray-200 bg-amber-50">
+              <h3 className="text-lg font-semibold text-amber-900">
+                {t('director.expenses.pending_title') || 'Pending Expense Approvals'}
+              </h3>
+              <p className="mt-1 text-sm text-amber-700">
+                {t('director.expenses.pending_desc') || 'Accept expenses to count them in totals. Reject to exclude them.'}
+              </p>
+            </div>
+            {pendingExpenses.length === 0 ? (
+              <div className="py-12 text-center text-gray-500">
+                {t('director.expenses.no_pending') || 'No pending expenses to approve'}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.date')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.name')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.project')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.category')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.to_whom')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.amount')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.payment_method')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('director.expenses.created_by') || 'Created by'}</th>
+                      {canApproveExpenses && (
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('director.expenses.actions') || 'Actions'}</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {pendingExpenses.map((exp) => (
+                      <tr key={exp.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {exp.createdAt ? new Date(exp.createdAt).toLocaleDateString() : '-'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{exp.name || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{exp.projectName || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{exp.categoryName}</td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{exp.toWhom}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                          {exp.amount?.toLocaleString?.() ?? exp.amount} UZS
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">
+                          {t(`finance.payment_method.${exp.paymentMethod}`) || exp.paymentMethod}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600">{exp.createdByName}</td>
+                        {canApproveExpenses && (
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                onClick={() => handleProcessPendingExpense(exp.id, 'approved')}
+                                disabled={processingExpenseId === exp.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
+                              >
+                                <FaCheck className="h-4 w-4" />
+                                {t('director.expenses.accept') || 'Accept'}
+                              </button>
+                              <button
+                                onClick={() => handleProcessPendingExpense(exp.id, 'rejected')}
+                                disabled={processingExpenseId === exp.id}
+                                className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                              >
+                                <FaTimes className="h-4 w-4" />
+                                {t('director.expenses.reject') || 'Reject'}
+                              </button>
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Profit Tab */}
@@ -1247,13 +1520,14 @@ export default function FinanceDashboard() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.total')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.payment_method')}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.comment')}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('table.status') || 'Status'}</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{t('finance.table.actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     {expenses.length === 0 ? (
                       <tr>
-                        <td colSpan={12} className="px-6 py-4 text-center text-gray-500">{t('finance.no_expenses')}</td>
+                        <td colSpan={13} className="px-6 py-4 text-center text-gray-500">{t('finance.no_expenses')}</td>
                       </tr>
                     ) : (
                       expenses.map((expense) => (
@@ -1292,6 +1566,16 @@ export default function FinanceDashboard() {
                             {t(`finance.payment_method.${expense.paymentMethod}`)}
                           </td>
                           <td className="px-6 py-4 text-sm text-gray-500">{expense.comment || '-'}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${
+                              !expense.approvalStatus || expense.approvalStatus === 'approved' ? 'bg-green-100 text-green-800' :
+                              expense.approvalStatus === 'pending' ? 'bg-amber-100 text-amber-800' :
+                              expense.approvalStatus === 'rejected' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-600'
+                            }`}>
+                              {t(`finance.expense_status.${expense.approvalStatus || 'approved'}`) || expense.approvalStatus || 'approved'}
+                            </span>
+                          </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <button
                               onClick={() => handleOpenExpenseModal(expense)}

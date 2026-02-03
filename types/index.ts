@@ -52,6 +52,16 @@ export interface Project {
   serviceStatuses?: Record<string, { status: 'done' | 'warning' | 'problem'; comment?: string }>;  // Foreman status per service (key = serviceId)
 }
 
+export interface ProjectImage {
+  id: string;
+  projectId: string;
+  imageUrl: string;
+  description: string;
+  foremanId?: string;
+  foremanName?: string;
+  createdAt: Date;
+}
+
 export interface Draft {
   id: string;
   projectId: string;
@@ -84,6 +94,7 @@ export interface Report {
 export interface Warning {
   id: string;
   projectId: string;
+  projectName?: string;
   foremanId: string;
   foremanName: string;
   message: string;
@@ -101,6 +112,7 @@ export interface SupplyRequest {
   foremanId: string;
   foremanName: string;
   items: string[];
+  itemPrices?: number[];  // Price for each material (supplier fills when accepting)
   deadline: Date;
   status: SupplyRequestStatus;
   note?: string;
@@ -207,6 +219,8 @@ export interface Profit {
   createdByName: string;
 }
 
+export type ExpenseApprovalStatus = 'pending' | 'approved' | 'rejected' | 'ignored';
+
 export interface Expense {
   id: string;
   projectId?: string;
@@ -224,6 +238,9 @@ export interface Expense {
   employees?: string[]; // Array of employee IDs for salary expenses
   employeeNames?: string[]; // Array of employee names for display
   profitId?: string; // Optional link to a profit entry
+  approvalStatus?: ExpenseApprovalStatus; // Director approval: pending, approved, rejected, ignored
+  approvedBy?: string;
+  approvedAt?: Date;
   createdAt: Date;
   createdBy: string;
   createdByName: string;

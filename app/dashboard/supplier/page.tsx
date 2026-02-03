@@ -40,8 +40,10 @@ export default function SupplierDashboard() {
   const [selectedRequest, setSelectedRequest] = useState<SupplyRequest | null>(null);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [supplierNote, setSupplierNote] = useState('');
+  const [itemPrices, setItemPrices] = useState<Record<number, string>>({});
   const router = useRouter();
   const { t } = useLanguage();
 
@@ -75,16 +77,18 @@ export default function SupplierDashboard() {
     }
   };
 
-  const handleStatusUpdate = async (id: string, status: SupplyRequest['status'], note?: string, reason?: string) => {
+  const handleStatusUpdate = async (id: string, status: SupplyRequest['status'], note?: string, reason?: string, prices?: number[]) => {
     setUpdatingId(id);
     try {
-      await updateSupplyRequestStatus(id, status, note, reason);
+      await updateSupplyRequestStatus(id, status, note, reason, prices);
       toast.success(t(`supplier.status_${status}`) || t('supplier.accepted'));
       await fetchRequests();
       setShowRejectModal(false);
       setShowNoteModal(false);
+      setShowAcceptModal(false);
       setRejectReason('');
       setSupplierNote('');
+      setItemPrices({});
       setSelectedRequest(null);
     } catch (error) {
       console.error('Error updating request:', error);
@@ -103,6 +107,31 @@ export default function SupplierDashboard() {
     setSelectedRequest(req);
     setSupplierNote(req.supplierNote || '');
     setShowNoteModal(true);
+  };
+
+  const handleAcceptClick = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    const initial: Record<number, string> = {};
+    req.items.forEach((_, idx) => {
+      initial[idx] = req.itemPrices?.[idx]?.toString() || '';
+    });
+    setItemPrices(initial);
+    setShowAcceptModal(true);
+  };
+
+  const handleAcceptSubmit = async () => {
+    if (!selectedRequest) return;
+    const prices = selectedRequest.items.map((_, idx) => {
+      const val = itemPrices[idx]?.trim();
+      const num = val ? parseFloat(val) : 0;
+      return isNaN(num) ? 0 : num;
+    });
+    const allFilled = prices.every((p, i) => p > 0);
+    if (!allFilled) {
+      toast.warning(t('supplier.price_required') || 'Please enter price for each material');
+      return;
+    }
+    await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices);
   };
 
   const getStatusColor = (status: SupplyRequest['status']) => {
@@ -259,9 +288,16 @@ export default function SupplierDashboard() {
                       </p>
                       <ul className="space-y-1">
                         {req.items.map((item, idx) => (
-                          <li key={idx} className="text-gray-700 flex items-start">
-                            <span className="text-indigo-600 mr-2">•</span>
-                            <span>{item}</span>
+                          <li key={idx} className="text-gray-700 flex items-start justify-between gap-2">
+                            <span className="flex items-start">
+                              <span className="text-indigo-600 mr-2">•</span>
+                              <span>{item}</span>
+                            </span>
+                            {req.itemPrices?.[idx] != null && req.itemPrices[idx] > 0 && (
+                              <span className="text-green-700 font-semibold whitespace-nowrap">
+                                {req.itemPrices[idx].toLocaleString()} UZS
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -328,7 +364,7 @@ export default function SupplierDashboard() {
                       {req.status === 'pending' && (
                         <>
                           <button
-                            onClick={() => handleStatusUpdate(req.id, 'accepted')}
+                            onClick={() => handleAcceptClick(req)}
                             disabled={updatingId === req.id}
                             className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
                           >
@@ -418,6 +454,51 @@ export default function SupplierDashboard() {
             })
           )}
         </div>
+
+        {/* Accept Modal - Enter price for each material */}
+        {showAcceptModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-xl font-semibold mb-4">{t('supplier.accept_order')} - {t('supplier.enter_prices')}</h2>
+              <p className="text-sm text-gray-600 mb-4">{t('supplier.enter_price_hint')}</p>
+              <div className="space-y-3 mb-6">
+                {selectedRequest.items.map((item, idx) => (
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2 p-3 bg-gray-50 rounded-lg">
+                    <span className="flex-1 text-gray-800 font-medium truncate">{item}</span>
+                    <div className="flex items-center gap-2 sm:w-40">
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={itemPrices[idx] ?? ''}
+                        onChange={(e) => setItemPrices((p) => ({ ...p, [idx]: e.target.value }))}
+                        placeholder={t('supplier.price_placeholder')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                      <span className="text-sm text-gray-500 whitespace-nowrap">UZS</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleAcceptSubmit}
+                  disabled={updatingId === selectedRequest.id}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2"
+                >
+                  <FaCheck className="w-4 h-4" />
+                  {t('supplier.confirm_accept')}
+                </button>
+                <button
+                  onClick={() => { setShowAcceptModal(false); setSelectedRequest(null); setItemPrices({}); }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold"
+                >
+                  {t('foreman.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Reject Modal */}
         {showRejectModal && selectedRequest && (

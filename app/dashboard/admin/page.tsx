@@ -408,7 +408,7 @@ export default function AdminDashboard() {
                   data={warnings}
                   columns={[
                     { name: t('table.foreman'), selector: (row: Warning) => row.foremanName || t('table.unknown_foreman') },
-                    { name: t('table.project'), selector: (row: Warning) => row.projectId?.slice(0, 8) || t('table.no_project') },
+                    { name: t('table.project'), selector: (row: Warning) => row.projectName || row.projectId?.slice(0, 8) || t('table.no_project') },
                     { name: t('table.message'), selector: (row: Warning) => row.message },
                     { name: t('table.status'), selector: (row: Warning) => t(`warning.${row.status}` as any) || row.status },
                     { name: t('table.date'), selector: (row: Warning) => row.createdAt ? new Date(row.createdAt).toLocaleString() : '' },
@@ -423,7 +423,7 @@ export default function AdminDashboard() {
                           Warning from {warning.foremanName}
                         </p>
                         <p className="text-sm text-gray-500">
-                          Project: {warning.projectId.slice(0, 8)}
+                          Project: {warning.projectName || (warning.projectId ? warning.projectId.slice(0, 8) : t('table.no_project'))}
                         </p>
                         <p className="text-sm text-red-700 mt-2 font-semibold">
                           {warning.message}

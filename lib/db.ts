@@ -256,7 +256,8 @@ export const updateSupplyRequestStatus = async (
   id: string,
   status: SupplyRequestStatus,
   supplierNote?: string,
-  rejectedReason?: string
+  rejectedReason?: string,
+  itemPrices?: number[]
 ): Promise<void> => {
   const requestRef = doc(db, 'supplyRequests', id);
   const updateData: any = { status };
@@ -267,6 +268,10 @@ export const updateSupplyRequestStatus = async (
 
   if (rejectedReason) {
     updateData.rejectedReason = rejectedReason;
+  }
+
+  if (itemPrices && itemPrices.length > 0) {
+    updateData.itemPrices = itemPrices;
   }
 
   if (status === 'accepted') {
@@ -506,13 +511,13 @@ export const createAttendance = async (attendance: Omit<Attendance, 'id' | 'crea
 
 export const getAttendance = async (userId?: string, date?: Date): Promise<Attendance[]> => {
   const attendanceRef = collection(db, 'attendance');
-  let q = query(attendanceRef, orderBy('date', 'desc'), orderBy('createdAt', 'desc'));
+  let q;
 
+  // Use simple queries to avoid composite index requirements
   if (userId) {
-    q = query(attendanceRef, where('userId', '==', userId), orderBy('date', 'desc'), orderBy('createdAt', 'desc'));
-  }
-
-  if (date) {
+    // Only filter by userId - Firestore auto-indexes single-field equality
+    q = query(attendanceRef, where('userId', '==', userId));
+  } else if (date) {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
@@ -520,13 +525,14 @@ export const getAttendance = async (userId?: string, date?: Date): Promise<Atten
     q = query(
       attendanceRef,
       where('date', '>=', Timestamp.fromDate(startOfDay)),
-      where('date', '<=', Timestamp.fromDate(endOfDay)),
-      orderBy('date', 'desc')
+      where('date', '<=', Timestamp.fromDate(endOfDay))
     );
+  } else {
+    q = query(attendanceRef, orderBy('date', 'desc'));
   }
 
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(docSnap => {
+  let results = snapshot.docs.map(docSnap => {
     const data = docSnap.data();
     return {
       id: docSnap.id,
@@ -537,6 +543,27 @@ export const getAttendance = async (userId?: string, date?: Date): Promise<Atten
       createdAt: data.createdAt?.toDate?.() || new Date(),
     };
   }) as Attendance[];
+
+  // Filter by date in memory when both userId and date provided (avoids composite index)
+  if (userId && date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    results = results.filter(r => {
+      const d = r.date instanceof Date ? r.date : new Date(r.date);
+      return d >= startOfDay && d <= endOfDay;
+    });
+  }
+
+  // Sort by date descending
+  results.sort((a, b) => {
+    const da = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+    const db = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+    return db - da;
+  });
+
+  return results;
 };
 
 export const updateAttendanceCheckOut = async (id: string, checkOutTime: Date): Promise<void> => {
@@ -652,16 +679,19 @@ export const getExpenses = async (): Promise<Expense[]> => {
       id: doc.id,
       ...data,
       createdAt: data.createdAt?.toDate?.() || new Date(),
+      approvedAt: data.approvedAt?.toDate?.() || undefined,
     };
   }) as Expense[];
 };
 
 export const updateExpense = async (id: string, updates: Partial<Expense>): Promise<void> => {
   const expenseRef = doc(db, 'expenses', id);
-  // Filter out undefined values as Firestore doesn't allow them
   const cleanUpdates = Object.fromEntries(
     Object.entries(updates).filter(([_, value]) => value !== undefined)
-  ) as Partial<Expense>;
+  ) as Record<string, unknown>;
+  if (cleanUpdates.approvedAt instanceof Date) {
+    cleanUpdates.approvedAt = Timestamp.fromDate(cleanUpdates.approvedAt);
+  }
   await updateDoc(expenseRef, cleanUpdates);
 };
 
@@ -895,5 +925,4 @@ export const deleteDraft = async (id: string): Promise<void> => {
   const draftRef = doc(db, 'drafts', id);
   await deleteDoc(draftRef);
 };
-
 

@@ -91,7 +91,7 @@ export default function WarningBell() {
                                             {warning.foremanName || t('table.unknown_foreman')}
                                         </p>
                                         <p className="text-xs text-gray-500 mb-1">
-                                            {t('table.project')}: {warning.projectId.slice(0, 8)}
+                                            {t('table.project')}: {warning.projectName || (warning.projectId ? warning.projectId.slice(0, 8) : '-')}
                                         </p>
                                         <p className="text-sm text-red-600">
                                             {warning.message}

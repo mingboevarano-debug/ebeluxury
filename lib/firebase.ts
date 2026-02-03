@@ -17,14 +17,16 @@ let app: FirebaseApp = {} as FirebaseApp;
 let auth: Auth = {} as Auth;
 let db: Firestore = {} as Firestore;
 
+// Initialize app and Firestore in both browser and Node (API routes)
+if (!getApps().length) {
+  app = initializeApp(firebaseConfig);
+} else {
+  app = getApps()[0] as FirebaseApp;
+}
+db = getFirestore(app);
+
 if (typeof window !== 'undefined') {
-  if (!getApps().length) {
-    app = initializeApp(firebaseConfig);
-  } else {
-    app = getApps()[0];
-  }
   auth = getAuth(app);
-  db = getFirestore(app);
 }
 
 export { auth, db };

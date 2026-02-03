@@ -1,7 +1,8 @@
 'use client';
 
-// Force rebuild 2
 import { useState, useEffect, useMemo } from 'react';
+
+const SELLER_DRAFT_KEY = 'seller_contract_draft';
 import Layout from '@/components/Layout';
 import { Contract, User } from '@/types';
 import { getContracts, createContract } from '@/lib/db';
@@ -85,6 +86,49 @@ export default function SellerDashboard() {
     };
   }, [showForm]);
 
+  // Auto-save form draft to localStorage
+  useEffect(() => {
+    const hasContent = formData.clientName || formData.clientSurname || formData.clientPhone ||
+      formData.constructionName || formData.location || formData.description ||
+      formData.selectedServices.length > 0;
+    if (hasContent) {
+      try {
+        localStorage.setItem(SELLER_DRAFT_KEY, JSON.stringify(formData));
+      } catch (e) {
+        /* ignore */
+      }
+    }
+  }, [formData]);
+
+  // Restore draft on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SELLER_DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.clientName || parsed.clientSurname || parsed.selectedServices?.length > 0)) {
+          setFormData({
+            clientName: parsed.clientName || '',
+            clientSurname: parsed.clientSurname || '',
+            clientPhone: parsed.clientPhone || '',
+            constructionName: parsed.constructionName || '',
+            doorPassword: parsed.doorPassword || '',
+            location: parsed.location || '',
+            price: parsed.price || '',
+            deadline: parsed.deadline || '',
+            description: parsed.description || '',
+            accommodationType: parsed.accommodationType || 'apartment',
+            passportId: parsed.passportId || '',
+            accommodationSquare: parsed.accommodationSquare || '',
+            selectedServices: Array.isArray(parsed.selectedServices) ? parsed.selectedServices : [],
+          });
+        }
+      }
+    } catch (e) {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     // Subscribe to auth state changes
     const unsubscribe = subscribeToAuthChanges((currentUser) => {
@@ -167,6 +211,11 @@ export default function SellerDashboard() {
         constructionName: '',
         doorPassword: '',
       });
+      try {
+        localStorage.removeItem(SELLER_DRAFT_KEY);
+      } catch (e) {
+        /* ignore */
+      }
       fetchContracts();
       toast.success('Contract created successfully');
     } catch (error) {
@@ -174,6 +223,15 @@ export default function SellerDashboard() {
       toast.error(t('alert.create_failed'));
     }
   };
+
+  // Check if seller has created at least 1 contract in the past week
+  const sellerContracts = user ? contracts.filter((c) => c.sellerId === user.id) : [];
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  const hasContractThisWeek = sellerContracts.some(
+    (c) => c.createdAt && new Date(c.createdAt) >= oneWeekAgo
+  );
+  const showContractReminder = user && !hasContractThisWeek;
 
   const filteredItems = contracts.filter(
     item =>
@@ -442,6 +500,28 @@ export default function SellerDashboard() {
             {showForm ? t('seller.cancel') : t('seller.create_contract')}
           </button>
         </div>
+
+        {showContractReminder && (
+          <div
+            className="mb-6 p-5 rounded-xl bg-red-50/80 border border-red-200/90 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4"
+            role="alert"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex-shrink-0 w-11 h-11 rounded-lg bg-red-100 flex items-center justify-center">
+                <FaInfoCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <p className="text-red-800 font-medium text-base sm:text-lg leading-relaxed">
+                {t('seller.contract_reminder')}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex-shrink-0 px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors self-start sm:self-auto"
+            >
+              {t('seller.create_contract')}
+            </button>
+          </div>
+        )}
 
         {showForm && (
           <div
