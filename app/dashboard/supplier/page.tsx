@@ -41,11 +41,13 @@ export default function SupplierDashboard() {
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [supplierNote, setSupplierNote] = useState('');
   const [itemPrices, setItemPrices] = useState<Record<number, string>>({});
   const [materialCategory, setMaterialCategory] = useState<FinanceCategory | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isMobileCardView, setIsMobileCardView] = useState(false);
   const router = useRouter();
   const { t } = useLanguage();
 
@@ -199,12 +201,12 @@ export default function SupplierDashboard() {
         const expenseAmount = prices[idx];
 
         const commentParts = [
-          `Contract: Delivery contract ${selectedRequest.projectName || selectedRequest.projectId}`,
-          selectedRequest.foremanName ? `Foreman: ${selectedRequest.foremanName}` : '',
-          selectedRequest.projectLocation ? `Location: ${selectedRequest.projectLocation}` : '',
+          `Shartnoma: yetkazib berish shartnomasi ${selectedRequest.projectName || selectedRequest.projectId}`,
+          selectedRequest.foremanName ? `Ustasi: ${selectedRequest.foremanName}` : '',
+          selectedRequest.projectLocation ? `Joylashuv: ${selectedRequest.projectLocation}` : '',
           '',
-          `${t('supplier.expense_item_detail') || 'Item'}: ${expenseName}`,
-          `${t('supplier.expense_item_price') || 'Price'}: ${expenseAmount.toLocaleString('uz-UZ')} UZS`,
+          `Pozitsiya: ${expenseName}`,
+          `Narx: ${expenseAmount.toLocaleString('uz-UZ')} UZS`,
         ].filter(Boolean);
 
         await createExpense({

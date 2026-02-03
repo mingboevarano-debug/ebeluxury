@@ -57,7 +57,7 @@ export async function editMessageText(
 }
 
 const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '5310317109';
-const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '')
+const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '1119588540')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);
@@ -160,10 +160,15 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
       ]
     ];
 
+    const simpleMessage = data.pendingApproval
+      ? `📢 Yangi xarajat: ${escapeHtml(data.name)} (${amountFormatted} UZS).\nIltimos, saytga kirib tasdiqlang.`
+      : `ℹ️ Yangi xarajat qo'shildi: ${escapeHtml(data.name)} (${amountFormatted} UZS).`;
+
     let delivered = false;
 
     for (const adminId of TELEGRAM_ADMIN_IDS) {
       try {
+        const isPrimary = adminId === primaryAdminId;
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -171,9 +176,9 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
           },
           body: JSON.stringify({
             chat_id: adminId,
-            text: message,
+            text: isPrimary ? message : simpleMessage,
             parse_mode: 'HTML',
-            ...(inlineKeyboard && {
+            ...(isPrimary && inlineKeyboard && {
               reply_markup: {
                 inline_keyboard: inlineKeyboard
               }
