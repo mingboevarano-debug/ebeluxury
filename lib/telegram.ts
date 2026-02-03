@@ -56,8 +56,8 @@ export async function editMessageText(
   return res.ok;
 }
 
-const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '1119588540';
-const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '5310317109')
+const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '5310317109';
+const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);

@@ -27,6 +27,12 @@ export const dictionaries = {
         'nav.meetings': 'Meetings',
         'nav.accounting': 'Accounting',
         'nav.statistics': 'Statistics',
+        'nav.finance': 'Finance',
+        'expense.notifications.title': 'Recent Expenses',
+        'expense.notifications.subtitle': 'Expenses added in the last 24 hours',
+        'expense.notifications.no_recent': 'No recent expenses to review',
+        'expense.notifications.created_by': 'Created by',
+
         'nav.expense_queue': 'Expense Queue',
 
         // Admin Dashboard
@@ -897,6 +903,12 @@ export const dictionaries = {
         'nav.meetings': 'Встречи',
         'nav.accounting': 'Бухгалтерия',
         'nav.statistics': 'Статистика',
+        'nav.finance': 'Финансы',
+        'expense.notifications.title': 'Недавние расходы',
+        'expense.notifications.subtitle': 'Расходы за последние 24 часа',
+        'expense.notifications.no_recent': 'Новых расходов нет',
+        'expense.notifications.created_by': 'Создал',
+
         'nav.expense_queue': 'Очередь расходов',
 
         'stats.title': 'Статистика Системы',
@@ -1755,6 +1767,12 @@ export const dictionaries = {
         'nav.meetings': 'Uchrashuvlar',
         'nav.accounting': 'Bugalteriya bo\'limi',
         'nav.statistics': 'Statistika',
+        'nav.finance': 'Moliya',
+        'expense.notifications.title': 'Yaqin vaqt ichida qo\'shilgan xarajatlar',
+        'expense.notifications.subtitle': 'So\'nggi 24 soatda qo\'shilgan xarajatlar',
+        'expense.notifications.no_recent': 'Yangi xarajatlar topilmadi',
+        'expense.notifications.created_by': 'Kim qo\'shgan',
+
         'nav.expense_queue': 'Xarajat navbati',
 
         'stats.title': 'Tizim Umumiy Ko\'rinishi',

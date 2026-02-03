@@ -9,6 +9,7 @@ import LanguageSwitcher from './LanguageSwitcher';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const WarningBell = dynamic(() => import('./WarningBell'), { ssr: false });
+const ExpenseBell = dynamic(() => import('./ExpenseBell'), { ssr: false });
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -44,6 +45,12 @@ export default function Layout({ children }: LayoutProps) {
     return () => unsubscribe();
   }, [router, pathname]);
 
+  useEffect(() => {
+    if (user?.role === 'director' && pathname !== '/dashboard/finance') {
+      router.replace('/dashboard/finance');
+    }
+  }, [user, pathname, router]);
+
   const handleSignOut = async () => {
     await signOut();
     router.push('/login');
@@ -59,7 +66,7 @@ export default function Layout({ children }: LayoutProps) {
 
   if (!user) return null;
 
-  const navigation = [
+  let navigation = [
     { name: tt('nav.dashboard', 'Dashboard'), href: `/dashboard/${user.role}` },
     { name: tt('nav.attendance', 'Attendance'), href: '/dashboard/attendance' },
     { name: tt('nav.calendar', 'Calendar'), href: '/dashboard/calendar' },
@@ -76,6 +83,10 @@ export default function Layout({ children }: LayoutProps) {
       ? [{ name: tt('nav.finance', 'Finance'), href: '/dashboard/finance' }]
       : []),
   ];
+
+  if (user.role === 'director') {
+    navigation = [{ name: tt('nav.finance', 'Finance'), href: '/dashboard/finance' }];
+  }
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
@@ -173,6 +184,7 @@ export default function Layout({ children }: LayoutProps) {
 
           <div className="flex items-center space-x-4">
             <LanguageSwitcher />
+            {user.role === 'admin' && <ExpenseBell />}
             <WarningBell />
           </div>
         </header>
