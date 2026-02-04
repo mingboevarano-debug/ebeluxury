@@ -218,7 +218,7 @@ export function parseSupplyCallbackData(data: string): { action: 'accept' | 'ref
 
 // Supplier receives "new order" notification with link to web app
 // 1 supplier (receives supply order notifications)
-const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '8299164114';
+const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '7924049560';
 
 export interface SupplyRequestNotificationData {
   requestId: string;
