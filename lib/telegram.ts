@@ -216,13 +216,10 @@ export function parseSupplyCallbackData(data: string): { action: 'accept' | 'ref
   return requestId && requestId !== 'unknown' ? { action, requestId } : null;
 }
 
-<<<<<<< HEAD
 // Supplier receives "new order" notification with link to web app
 // 1 supplier (receives supply order notifications)
 const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '8299164114';
 
-=======
->>>>>>> 7a02268ce9a8bf60494f090fc89dd9af45b86ed8
 export interface SupplyRequestNotificationData {
   requestId: string;
   projectName: string;
@@ -232,7 +229,6 @@ export interface SupplyRequestNotificationData {
   deadline: Date;
 }
 
-<<<<<<< HEAD
 /** Send Telegram to supplier: new order from foreman, please open web app and accept. */
 export async function sendSupplyOrderToSupplier(data: {
   projectName: string;
