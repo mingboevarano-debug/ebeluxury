@@ -1,0 +1,953 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Layout from '@/components/Layout';
+import { SupplyRequest, FinanceCategory, User } from '@/types';
+import { getCurrentUser } from '@/lib/auth';
+import { getSupplyRequests, updateSupplyRequestStatus, createExpense, getFinanceCategories } from '@/lib/db';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
+import { 
+  MdPendingActions, 
+  MdCheckCircle, 
+  MdLocalShipping, 
+  MdDone, 
+  MdCancel,
+  MdSearch,
+  MdFilterList,
+  MdDownload
+} from 'react-icons/md';
+import { 
+  FaClock, 
+  FaMapMarkerAlt, 
+  FaUserTie,
+  FaExclamationTriangle,
+  FaCheck,
+  FaTimes,
+  FaTruck,
+  FaBox
+} from 'react-icons/fa';
+import Countdown from 'react-countdown';
+
+type StatusFilter = 'all' | 'pending' | 'accepted' | 'in_progress' | 'delivered' | 'completed' | 'rejected';
+
+export default function SupplierDashboard() {
+  const [requests, setRequests] = useState<SupplyRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRequest, setSelectedRequest] = useState<SupplyRequest | null>(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showAcceptModal, setShowAcceptModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [supplierNote, setSupplierNote] = useState('');
+  const [itemPrices, setItemPrices] = useState<Record<number, string>>({});
+  const [itemRefusedReason, setItemRefusedReason] = useState<Record<number, string>>({}); // key: out_of_stock | not_available | discontinued | other
+  const [itemRefusedOtherText, setItemRefusedOtherText] = useState<Record<number, string>>({}); // custom text when reason is "other"
+  const [materialCategory, setMaterialCategory] = useState<FinanceCategory | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isMobileCardView, setIsMobileCardView] = useState(false);
+  const router = useRouter();
+  const { t } = useLanguage();
+
+  useEffect(() => {
+    const init = async () => {
+      const user = await getCurrentUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      if (user.role !== 'supplier') {
+        toast.error(t('supplier.no_access'));
+        router.push(`/dashboard/${user.role}`);
+        return;
+      }
+      setCurrentUser(user);
+      await fetchMaterialCategory();
+      await fetchRequests();
+    };
+    init();
+  }, []);
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const data = await getSupplyRequests();
+      setRequests(data);
+    } catch (error) {
+      console.error('Error fetching supply requests:', error);
+      toast.error(t('supplier.load_error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const updateViewport = () => {
+      if (typeof window !== 'undefined') {
+        setIsMobileCardView(window.innerWidth < 640);
+      }
+    };
+    updateViewport();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', updateViewport);
+      return () => window.removeEventListener('resize', updateViewport);
+    }
+    return;
+  }, []);
+
+  const fetchMaterialCategory = async () => {
+    try {
+      const categories = await getFinanceCategories('expense');
+      const materialCat = categories.find(cat => cat.name?.trim().toLowerCase() === 'materialarga harajat'.toLowerCase());
+      setMaterialCategory(materialCat ?? null);
+      if (!materialCat) {
+        toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+      }
+    } catch (error) {
+      console.error('Error fetching finance categories:', error);
+      toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+    }
+  };
+
+  const handleStatusUpdate = async (
+    id: string,
+    status: SupplyRequest['status'],
+    note?: string,
+    reason?: string,
+    prices?: number[],
+    expenseId?: string,
+    itemRefusedReasons?: string[]
+  ) => {
+    setUpdatingId(id);
+    try {
+      await updateSupplyRequestStatus(id, status, note, reason, prices, expenseId, itemRefusedReasons);
+      toast.success(t(`supplier.status_${status}`) || t('supplier.accepted'));
+      await fetchRequests();
+      setShowRejectModal(false);
+      setShowNoteModal(false);
+      setShowAcceptModal(false);
+      setShowInfoModal(false);
+      setRejectReason('');
+      setSupplierNote('');
+      setItemPrices({});
+      setItemRefusedReason({});
+      setItemRefusedOtherText({});
+      setSelectedRequest(null);
+    } catch (error) {
+      console.error('Error updating request:', error);
+      toast.error(t('supplier.update_error'));
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleReject = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    setShowRejectModal(true);
+  };
+
+  const handleAddNote = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    setSupplierNote(req.supplierNote || '');
+    setShowNoteModal(true);
+  };
+
+  const handleMoreInfo = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    setShowInfoModal(true);
+  };
+
+  const REFUSE_REASON_KEYS = ['out_of_stock', 'not_available', 'discontinued', 'other'] as const;
+
+  const handleAcceptClick = (req: SupplyRequest) => {
+    setSelectedRequest(req);
+    const initial: Record<number, string> = {};
+    req.items.forEach((_, idx) => {
+      const raw = req.itemPrices?.[idx]?.toString() || '';
+      initial[idx] = formatPriceDisplay(raw);
+    });
+    setItemPrices(initial);
+    setItemRefusedReason({});
+    setItemRefusedOtherText({});
+    setShowAcceptModal(true);
+  };
+
+  const getRefuseReasonLabel = (key: string) => {
+    if (!key) return '';
+    const k = key as typeof REFUSE_REASON_KEYS[number];
+    return t(`supplier.refuse_reason_${k}`) || key;
+  };
+
+  const formatPriceDisplay = (val: string): string => {
+    const digits = (val || '').replace(/\D/g, '');
+    if (digits === '') return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  };
+
+  const parsePriceInput = (val: string): number => {
+    const num = parseFloat((val || '').replace(/\s/g, '').replace(/\u00a0/g, '')) || 0;
+    return isNaN(num) ? 0 : num;
+  };
+
+  const handleAcceptSubmit = async () => {
+    if (!selectedRequest) return;
+    const refused = selectedRequest.items.map((_, idx) => !!itemRefusedReason[idx]);
+    const prices = selectedRequest.items.map((_, idx) => {
+      if (refused[idx]) return 0;
+      return parsePriceInput(itemPrices[idx] ?? '');
+    });
+    const acceptedCount = prices.filter((p, i) => !refused[i] && p > 0).length;
+    if (acceptedCount === 0) {
+      toast.warning(refused.every(Boolean)
+        ? (t('supplier.refuse_need_one') || 'Refuse at least one item or enter prices for some items.')
+        : (t('supplier.price_required') || 'Please enter price for each accepted material'));
+      return;
+    }
+    const needPriceForAccepted = selectedRequest.items.some((_, idx) => !refused[idx] && parsePriceInput(itemPrices[idx] ?? '') <= 0);
+    if (needPriceForAccepted) {
+      toast.warning(t('supplier.price_required') || 'Please enter price for each accepted material');
+      return;
+    }
+    if (!materialCategory) {
+      toast.error(t('supplier.material_category_missing') || 'Material expense category not found. Please create one in Finance settings.');
+      return;
+    }
+    if (!currentUser) {
+      toast.error(t('supplier.user_missing') || 'Current user not found');
+      return;
+    }
+    const itemRefusedReasonsArray = selectedRequest.items.map((_, idx) => {
+      const key = itemRefusedReason[idx];
+      if (!key) return '';
+      return key === 'other' ? (itemRefusedOtherText[idx] || t('supplier.refuse_reason_other')) : getRefuseReasonLabel(key);
+    });
+
+    try {
+      for (let idx = 0; idx < selectedRequest.items.length; idx++) {
+        if (refused[idx] || prices[idx] <= 0) continue;
+        const expenseName = selectedRequest.items[idx];
+        const expenseAmount = prices[idx];
+        const commentParts = [
+          `Shartnoma: yetkazib berish shartnomasi ${selectedRequest.projectName || selectedRequest.projectId}`,
+          selectedRequest.foremanName ? `Ustasi: ${selectedRequest.foremanName}` : '',
+          selectedRequest.projectLocation ? `Joylashuv: ${selectedRequest.projectLocation}` : '',
+          '',
+          `Pozitsiya: ${expenseName}`,
+          `Narx: ${expenseAmount.toLocaleString('uz-UZ')} UZS`,
+        ].filter(Boolean);
+        // Expense goes to queue; only counted in totals after director approves
+        const expenseId = await createExpense({
+          projectId: selectedRequest.projectId,
+          projectName: selectedRequest.projectName || 'Delivery contract',
+          name: expenseName,
+          categoryId: materialCategory.id,
+          categoryName: materialCategory.name,
+          paymentMethod: 'cash',
+          amount: expenseAmount,
+          toWhom: t('supplier.supplier_label') || 'Supplier',
+          createdBy: currentUser.id,
+          createdByName: currentUser.name,
+          approvalStatus: 'pending',
+          comment: commentParts.join('\n'),
+        });
+        try {
+          await fetch('/api/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: expenseName,
+              categoryName: materialCategory.name,
+              amount: expenseAmount,
+              toWhom: t('supplier.supplier_label') || 'Supplier',
+              createdByName: currentUser.name,
+              projectName: selectedRequest.projectName || 'Delivery contract',
+              paymentMethod: 'cash',
+              comment: commentParts.join('\n'),
+              pendingApproval: true,
+              expenseId,
+              showActionButtons: true,
+            }),
+          });
+        } catch (telegramErr) {
+          console.error('Telegram expense notification failed:', telegramErr);
+        }
+      }
+      toast.success(t('supplier.expense_created') || 'Expense recorded successfully');
+      await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices, undefined, itemRefusedReasonsArray);
+    } catch (error) {
+      console.error('Error creating expense from supply request:', error);
+      toast.error(t('supplier.expense_create_error') || 'Failed to create expense for this order');
+    }
+  };
+
+  const getStatusColor = (status: SupplyRequest['status']) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'accepted': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'in_progress': return 'bg-purple-100 text-purple-800 border-purple-200';
+      case 'delivered': return 'bg-green-100 text-green-800 border-green-200';
+      case 'completed': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+      case 'rejected': return 'bg-red-100 text-red-800 border-red-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+  const getStatusIcon = (status: SupplyRequest['status']) => {
+    switch (status) {
+      case 'pending': return <MdPendingActions className="w-5 h-5" />;
+      case 'accepted': return <MdCheckCircle className="w-5 h-5" />;
+      case 'in_progress': return <FaTruck className="w-5 h-5" />;
+      case 'delivered': return <MdLocalShipping className="w-5 h-5" />;
+      case 'completed': return <MdDone className="w-5 h-5" />;
+      case 'rejected': return <MdCancel className="w-5 h-5" />;
+      default: return null;
+    }
+  };
+
+  const isUrgent = (deadline: Date) => {
+    const now = new Date();
+    const diff = deadline.getTime() - now.getTime();
+    const hours = diff / (1000 * 60 * 60);
+    return hours <= 24 && hours > 0;
+  };
+
+  const isOverdue = (deadline: Date) => {
+    return new Date(deadline) < new Date();
+  };
+
+  const filteredRequests = requests.filter(req => {
+    const matchesStatus = statusFilter === 'all' || req.status === statusFilter;
+    const matchesSearch = searchQuery === '' || 
+      req.projectName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.foremanName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      req.items.some(item => item.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesStatus && matchesSearch;
+  });
+
+  const statusCounts = {
+    all: requests.length,
+    pending: requests.filter(r => r.status === 'pending').length,
+    accepted: requests.filter(r => r.status === 'accepted').length,
+    in_progress: requests.filter(r => r.status === 'in_progress').length,
+    delivered: requests.filter(r => r.status === 'delivered').length,
+    completed: requests.filter(r => r.status === 'completed').length,
+    rejected: requests.filter(r => r.status === 'rejected').length,
+  };
+
+  const orderToExcelRow = (req: SupplyRequest) => {
+    const itemsText = req.items.join('; ');
+    const pricesText = (req.itemPrices ?? [])
+      .map((p, i) => (req.items[i] && !req.itemRefusedReasons?.[i] ? `${req.items[i]}: ${p.toLocaleString('uz-UZ')} UZS` : ''))
+      .filter(Boolean)
+      .join('; ');
+    const total = (req.itemPrices ?? []).reduce((s, p, i) => (req.itemRefusedReasons?.[i] ? s : s + p), 0);
+    const refusedText = (req.itemRefusedReasons ?? [])
+      .map((reason, i) => (reason && req.items[i] ? `${req.items[i]}: ${reason}` : ''))
+      .filter(Boolean)
+      .join('; ');
+    return {
+      [t('supplier.project') || 'Project']: req.projectName || req.projectId,
+      [t('supplier.foreman') || 'Foreman']: req.foremanName,
+      [t('supplier.location') || 'Location']: req.projectLocation ?? '',
+      [t('supplier.status') || 'Status']: t(`supplier.status_${req.status}`) || req.status,
+      [t('supplier.deadline') || 'Deadline']: new Date(req.deadline).toLocaleString(),
+      [t('supplier.items') || 'Items']: itemsText,
+      [t('supplier.prices') || 'Prices (UZS)']: pricesText || (total > 0 ? total.toLocaleString('uz-UZ') : ''),
+      [t('supplier.refused_items') || 'Refused items']: refusedText,
+      [t('supplier.foreman_note') || 'Foreman note']: req.note ?? '',
+      [t('supplier.supplier_note') || 'Supplier note']: req.supplierNote ?? '',
+      [t('supplier.rejection_reason') || 'Rejection reason']: req.rejectedReason ?? '',
+      [t('supplier.accepted_at') || 'Accepted at']: req.acceptedAt ? new Date(req.acceptedAt).toLocaleString() : '',
+      [t('supplier.delivered_at') || 'Delivered at']: req.deliveredAt ? new Date(req.deliveredAt).toLocaleString() : '',
+    };
+  };
+
+  const downloadOrderToExcel = (req: SupplyRequest) => {
+    try {
+      const row = orderToExcelRow(req);
+      const ws = XLSX.utils.json_to_sheet([row]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, t('supplier.orders_sheet') || 'Orders');
+      const colWidths = Object.keys(row).map(() => ({ wch: 18 }));
+      ws['!cols'] = colWidths;
+      const safeName = (req.projectName || req.projectId || req.id).replace(/[^\w\s-]/g, '').slice(0, 30);
+      XLSX.writeFile(wb, `order_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(t('supplier.excel_downloaded') || 'Order exported to Excel');
+    } catch (error) {
+      console.error('Excel export error:', error);
+      toast.error(t('supplier.excel_error') || 'Failed to export to Excel');
+    }
+  };
+
+  return (
+    <Layout>
+      <div className="px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">{t('supplier.title')}</h1>
+          <p className="text-gray-600 mt-1 text-sm">
+            {t('supplier.subtitle') || 'Manage all supply orders and track their progress'}
+          </p>
+        </div>
+
+        {/* Search and Filter */}
+        <div className="mb-6 bg-white rounded-lg shadow p-4 border border-gray-200">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1 relative">
+              <MdSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder={t('supplier.search_placeholder') || 'Search by project, foreman, or items...'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+            </div>
+            <div className="flex items-center space-x-2">
+              <MdFilterList className="w-5 h-5 text-gray-500" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">{t('supplier.filter_all') || 'All Orders'} ({statusCounts.all})</option>
+                <option value="pending">{t('supplier.pending')} ({statusCounts.pending})</option>
+                <option value="accepted">{t('supplier.status_accepted')} ({statusCounts.accepted})</option>
+                <option value="in_progress">{t('supplier.status_in_progress') || 'In Progress'} ({statusCounts.in_progress})</option>
+                <option value="delivered">{t('supplier.status_delivered') || 'Delivered'} ({statusCounts.delivered})</option>
+                <option value="completed">{t('supplier.status_completed') || 'Completed'} ({statusCounts.completed})</option>
+                <option value="rejected">{t('supplier.status_rejected') || 'Rejected'} ({statusCounts.rejected})</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Orders List */}
+        <div className="space-y-4">
+          {loading ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <p className="text-gray-500">{t('supplier.loading')}</p>
+            </div>
+          ) : filteredRequests.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-8 text-center">
+              <p className="text-gray-500">{t('supplier.no_orders') || 'No orders found'}</p>
+            </div>
+          ) : (
+            filteredRequests.map((req) => {
+              const urgent = isUrgent(req.deadline);
+              const overdue = isOverdue(req.deadline);
+              
+              return (
+                <div
+                  key={req.id}
+                  className={`
+                    bg-white rounded-lg shadow-lg border-2 border-gray-200 hover:border-indigo-300 transition-all
+                    ${isMobileCardView ? 'p-4' : 'p-6'}
+                  `}
+                >
+                  <div className={isMobileCardView ? 'space-y-4' : ''}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className={`flex ${isMobileCardView ? 'flex-col space-y-2' : 'items-center space-x-3'} mb-2`}>
+                          <h3 className={`font-bold text-gray-900 ${isMobileCardView ? 'text-lg' : 'text-xl'}`}>
+                            {req.projectName || req.projectId}
+                          </h3>
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold border ${getStatusColor(req.status)}`}>
+                            {getStatusIcon(req.status)}
+                            <span className="ml-1">{t(`supplier.status_${req.status}`) || req.status}</span>
+                          </span>
+                          {(urgent || overdue) && (
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${
+                              overdue ? 'bg-red-100 text-red-800 animate-pulse' : 'bg-orange-100 text-orange-800'
+                            }`}>
+                              <FaExclamationTriangle className="w-3 h-3 mr-1" />
+                              {overdue ? t('supplier.overdue') || 'OVERDUE' : t('supplier.urgent') || 'URGENT'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-1 text-sm text-gray-600">
+                          <p className="flex items-center space-x-2">
+                            <FaUserTie className="w-4 h-4" />
+                            <span><strong>{t('supplier.foreman') || 'Foreman'}:</strong> {req.foremanName}</span>
+                          </p>
+                          <p className="flex items-center space-x-2">
+                            <FaMapMarkerAlt className="w-4 h-4" />
+                            <span><strong>{t('supplier.location') || 'Location'}:</strong> {req.projectLocation || t('supplier.no_location')}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Items */}
+                    <div className="bg-gray-50 rounded-lg p-4 mb-4 border border-gray-200">
+                      <p className="font-semibold text-gray-900 mb-2 flex items-center">
+                        <FaBox className="w-4 h-4 mr-2" />
+                        {t('supplier.items')}
+                      </p>
+                      <ul className="space-y-1">
+                        {req.items.map((item, idx) => {
+                          const refusedReason = req.itemRefusedReasons?.[idx];
+                          return (
+                            <li key={idx} className={`text-gray-700 flex items-start justify-between gap-2 ${refusedReason ? 'opacity-90' : ''}`}>
+                              <span className="flex items-start flex-wrap flex-1 min-w-0">
+                                <span className="text-indigo-600 mr-2">•</span>
+                                <span>{item}</span>
+                                {refusedReason && (
+                                  <span className="ml-2 text-red-600 text-sm">
+                                    ({t('supplier.refuse_item')}: {refusedReason})
+                                  </span>
+                                )}
+                              </span>
+                              {!refusedReason && req.itemPrices?.[idx] != null && req.itemPrices[idx] > 0 && (
+                                <span className="text-green-700 font-semibold whitespace-nowrap">
+                                  {req.itemPrices[idx].toLocaleString()} UZS
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+
+                    {/* Notes */}
+                    {(req.note || req.supplierNote || req.rejectedReason) && (
+                      <div className="mb-4 space-y-2">
+                        {req.note && (
+                          <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
+                            <p className="text-sm">
+                              <strong className="text-blue-900">{t('supplier.foreman_note') || 'Foreman Note'}:</strong>
+                              <span className="text-blue-800 ml-2">{req.note}</span>
+                            </p>
+                          </div>
+                        )}
+                        {req.supplierNote && (
+                          <div className="bg-green-50 border-l-4 border-green-400 p-3 rounded">
+                            <p className="text-sm">
+                              <strong className="text-green-900">{t('supplier.supplier_note') || 'Your Note'}:</strong>
+                              <span className="text-green-800 ml-2">{req.supplierNote}</span>
+                            </p>
+                          </div>
+                        )}
+                        {req.rejectedReason && (
+                          <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded">
+                            <p className="text-sm">
+                              <strong className="text-red-900">{t('supplier.rejection_reason') || 'Rejection Reason'}:</strong>
+                              <span className="text-red-800 ml-2">{req.rejectedReason}</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Deadline with Countdown */}
+                    <div className="mb-4 p-3 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2">
+                          <FaClock className={`w-5 h-5 ${overdue ? 'text-red-600' : urgent ? 'text-orange-600' : 'text-indigo-600'}`} />
+                          <span className="font-semibold text-gray-900">{t('supplier.deadline')}:</span>
+                          <span className={`font-bold ${overdue ? 'text-red-600' : urgent ? 'text-orange-600' : 'text-gray-700'}`}>
+                            {new Date(req.deadline).toLocaleString()}
+                          </span>
+                        </div>
+                        {!overdue && (
+                          <Countdown
+                            date={new Date(req.deadline)}
+                            renderer={({ days, hours, minutes, completed }) => {
+                              if (completed) return null;
+                              return (
+                                <span className={`text-sm font-semibold ${urgent ? 'text-orange-600' : 'text-indigo-600'}`}>
+                                  {days}d {hours}h {minutes}m
+                                </span>
+                              );
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div
+                      className={`flex ${isMobileCardView ? 'flex-col gap-2' : 'flex-wrap gap-2'} pt-4 border-t border-gray-200`}
+                    >
+                      {req.status === 'pending' && (
+                        <>
+                          <button
+                            onClick={() => handleAcceptClick(req)}
+                            disabled={updatingId === req.id}
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2
+                            `}
+                          >
+                            <FaCheck className="w-4 h-4" />
+                            <span>{isMobileCardView ? t('supplier.accept_mobile') : t('supplier.accept_order')}</span>
+                          </button>
+                          <button
+                            onClick={() => handleReject(req)}
+                            disabled={updatingId === req.id}
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2
+                            `}
+                          >
+                            <FaTimes className="w-4 h-4" />
+                            <span>{isMobileCardView ? t('supplier.reject_mobile') : t('supplier.reject_order') || 'Reject'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleMoreInfo(req)}
+                            className={`
+                              ${isMobileCardView ? 'w-full' : 'flex-1'}
+                              bg-gray-100 text-gray-700 px-4 py-2 rounded-lg font-semibold flex items-center justify-center space-x-2 border border-gray-300 hover:bg-gray-200
+                            `}
+                          >
+                            <span>{isMobileCardView ? t('supplier.more_info_mobile') : t('supplier.more_info') || 'More info'}</span>
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => downloadOrderToExcel(req)}
+                        className={`
+                          ${isMobileCardView ? 'w-full' : ''}
+                          inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
+                        `}
+                      >
+                        <MdDownload className="w-4 h-4" />
+                        <span>{t('supplier.download_excel') || 'Download to Excel'}</span>
+                      </button>
+                      {req.status === 'accepted' && (
+                        <>
+                          <button
+                            onClick={() => handleStatusUpdate(req.id, 'in_progress')}
+                            disabled={updatingId === req.id}
+                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
+                          >
+                            <FaTruck className="w-4 h-4" />
+                            <span>{t('supplier.mark_in_progress') || 'Mark In Progress'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleAddNote(req)}
+                            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold shadow flex items-center justify-center space-x-2"
+                          >
+                            <span>{t('supplier.add_note') || 'Add Note'}</span>
+                          </button>
+                        </>
+                      )}
+                      {req.status === 'in_progress' && (
+                        <>
+                          <button
+                            onClick={() => handleStatusUpdate(req.id, 'delivered')}
+                            disabled={updatingId === req.id}
+                            className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
+                          >
+                            <MdLocalShipping className="w-4 h-4" />
+                            <span>{t('supplier.mark_delivered') || 'Mark Delivered'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleAddNote(req)}
+                            className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold shadow flex items-center justify-center space-x-2"
+                          >
+                            <span>{t('supplier.add_note') || 'Add Note'}</span>
+                          </button>
+                        </>
+                      )}
+                      {req.status === 'delivered' && (
+                        <button
+                          onClick={() => handleStatusUpdate(req.id, 'completed')}
+                          disabled={updatingId === req.id}
+                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-semibold shadow disabled:opacity-50 flex items-center justify-center space-x-2"
+                        >
+                          <MdDone className="w-4 h-4" />
+                          <span>{t('supplier.mark_completed') || 'Mark Completed'}</span>
+                        </button>
+                      )}
+                      {(req.status === 'accepted' || req.status === 'in_progress' || req.status === 'delivered') && (
+                        <button
+                          onClick={() => handleAddNote(req)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold shadow flex items-center justify-center space-x-2"
+                        >
+                          <span>{t('supplier.update_note') || 'Update Note'}</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Timestamps */}
+                    {(req.acceptedAt || req.deliveredAt) && (
+                      <div className="mt-4 pt-4 border-t border-gray-200 text-xs text-gray-500 space-y-1">
+                        {req.acceptedAt && (
+                          <p>{t('supplier.accepted_at') || 'Accepted'}: {new Date(req.acceptedAt).toLocaleString()}</p>
+                        )}
+                        {req.deliveredAt && (
+                          <p>{t('supplier.delivered_at') || 'Delivered'}: {new Date(req.deliveredAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Accept Modal - Enter price for each material, optional refuse per item */}
+        {showAcceptModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-xl font-semibold mb-4">{t('supplier.accept_order')} - {t('supplier.enter_prices')}</h2>
+              <p className="text-sm text-gray-600 mb-4">{t('supplier.enter_price_hint')}</p>
+              <div className="space-y-3 mb-6">
+                {selectedRequest.items.map((item, idx) => {
+                  const isRefused = !!itemRefusedReason[idx];
+                  return (
+                    <div key={idx} className={`p-3 rounded-lg border ${isRefused ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="flex-1 text-gray-800 font-medium truncate min-w-0">{item}</span>
+                          {!isRefused && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={itemPrices[idx] ?? ''}
+                                onChange={(e) => setItemPrices((p) => ({ ...p, [idx]: formatPriceDisplay(e.target.value) }))}
+                                placeholder={t('supplier.price_placeholder')}
+                                className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                              />
+                              <span className="text-sm text-gray-500 whitespace-nowrap">UZS</span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isRefused) {
+                                setItemRefusedReason((r) => { const next = { ...r }; delete next[idx]; return next; });
+                                setItemRefusedOtherText((o) => { const next = { ...o }; delete next[idx]; return next; });
+                              } else {
+                                setItemRefusedReason((r) => ({ ...r, [idx]: 'out_of_stock' }));
+                              }
+                            }}
+                            className="shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold border bg-red-600 border-red-600 text-white hover:bg-red-700"
+                          >
+                            {isRefused ? t('supplier.refuse_item') + ' ✓' : t('supplier.refuse_item')}
+                          </button>
+                        </div>
+                        {isRefused && (
+                          <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
+                            <label className="text-sm text-gray-600">{t('supplier.refuse_reason')}:</label>
+                            <select
+                              value={itemRefusedReason[idx] || ''}
+                              onChange={(e) => setItemRefusedReason((r) => ({ ...r, [idx]: e.target.value }))}
+                              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                            >
+                              {REFUSE_REASON_KEYS.map((key) => (
+                                <option key={key} value={key}>{getRefuseReasonLabel(key)}</option>
+                              ))}
+                            </select>
+                            {itemRefusedReason[idx] === 'other' && (
+                              <input
+                                type="text"
+                                value={itemRefusedOtherText[idx] ?? ''}
+                                onChange={(e) => setItemRefusedOtherText((o) => ({ ...o, [idx]: e.target.value }))}
+                                placeholder={t('supplier.refuse_reason_other')}
+                                className="flex-1 min-w-[120px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleAcceptSubmit}
+                  disabled={updatingId === selectedRequest.id}
+                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold flex items-center justify-center gap-2"
+                >
+                  <FaCheck className="w-4 h-4" />
+                  {t('supplier.confirm_accept')}
+                </button>
+                <button
+                  onClick={() => { setShowAcceptModal(false); setSelectedRequest(null); setItemPrices({}); setItemRefusedReason({}); setItemRefusedOtherText({}); }}
+                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold"
+                >
+                  {t('foreman.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Reject Modal */}
+        {showRejectModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+              <h2 className="text-xl font-semibold mb-4">{t('supplier.reject_order') || 'Reject Order'}</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('supplier.rejection_reason') || 'Reason for rejection (required)'}
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder={t('supplier.rejection_placeholder') || 'Please provide a reason...'}
+                  />
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleStatusUpdate(selectedRequest.id, 'rejected', undefined, rejectReason)}
+                    disabled={!rejectReason.trim() || updatingId === selectedRequest.id}
+                    className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold"
+                  >
+                    {t('supplier.confirm_reject') || 'Confirm Rejection'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowRejectModal(false);
+                      setRejectReason('');
+                      setSelectedRequest(null);
+                    }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold"
+                  >
+                    {t('foreman.cancel') || 'Cancel'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Note Modal */}
+        {showNoteModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
+              <h2 className="text-xl font-semibold mb-4">{t('supplier.add_note') || 'Add Note'}</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('supplier.supplier_note') || 'Your Note'}
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={supplierNote}
+                    onChange={(e) => setSupplierNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder={t('supplier.note_placeholder') || 'Add a note about this order...'}
+                  />
+                </div>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => {
+                      const currentStatus = selectedRequest.status;
+                      handleStatusUpdate(selectedRequest.id, currentStatus, supplierNote);
+                    }}
+                    disabled={updatingId === selectedRequest.id}
+                    className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold"
+                  >
+                    {t('supplier.save_note') || 'Save Note'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNoteModal(false);
+                      setSupplierNote('');
+                      setSelectedRequest(null);
+                    }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold"
+                  >
+                    {t('foreman.cancel') || 'Cancel'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Info Modal */}
+        {showInfoModal && selectedRequest && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+              <h2 className="text-xl font-semibold mb-4">
+                {t('supplier.info_title') || 'Order details'}
+              </h2>
+              <div className="space-y-3 text-sm text-gray-700">
+                <p>
+                  <strong>{t('supplier.project') || 'Project'}:</strong>{' '}
+                  {selectedRequest.projectName || selectedRequest.projectId}
+                </p>
+                <p>
+                  <strong>{t('supplier.foreman') || 'Foreman'}:</strong>{' '}
+                  {selectedRequest.foremanName}
+                </p>
+                <p>
+                  <strong>{t('supplier.location') || 'Location'}:</strong>{' '}
+                  {selectedRequest.projectLocation || t('supplier.no_location')}
+                </p>
+                <p>
+                  <strong>{t('supplier.deadline') || 'Deadline'}:</strong>{' '}
+                  {new Date(selectedRequest.deadline).toLocaleString()}
+                </p>
+              </div>
+              <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <p className="font-semibold text-gray-900 mb-2">{t('supplier.items')}</p>
+                <ul className="space-y-2">
+                  {selectedRequest.items.map((item, idx) => {
+                    const refusedReason = selectedRequest.itemRefusedReasons?.[idx];
+                    return (
+                      <li key={idx} className="flex justify-between text-sm text-gray-700 flex-wrap gap-1">
+                        <span className="flex-1 min-w-0">
+                          {item}
+                          {refusedReason && (
+                            <span className="ml-1 text-red-600">({t('supplier.refuse_item')}: {refusedReason})</span>
+                          )}
+                        </span>
+                        {!refusedReason && selectedRequest.itemPrices?.[idx] != null && selectedRequest.itemPrices[idx] > 0 && (
+                          <span className="font-semibold text-indigo-600">
+                            {selectedRequest.itemPrices[idx].toLocaleString('uz-UZ')} UZS
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <div className="mt-4 space-y-2 text-sm text-gray-600">
+                {selectedRequest.note && (
+                  <p>
+                    <strong>{t('supplier.foreman_note') || 'Foreman note'}:</strong> {selectedRequest.note}
+                  </p>
+                )}
+                {selectedRequest.supplierNote && (
+                  <p>
+                    <strong>{t('supplier.supplier_note') || 'Supplier note'}:</strong> {selectedRequest.supplierNote}
+                  </p>
+                )}
+              </div>
+              <div className="mt-6 flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowInfoModal(false);
+                    setSelectedRequest(null);
+                  }}
+                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg font-semibold"
+                >
+                  {t('supplier.info_close') || 'Close'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </Layout>
+  );
+}
