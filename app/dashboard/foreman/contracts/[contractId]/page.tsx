@@ -394,7 +394,7 @@ export default function ForemanContractDetailPage() {
     setSubmittingSupply(true);
     try {
       const items = validItems.map((i) => `${i.material.trim()} x${i.quantity.trim()}`);
-      await createSupplyRequest({
+      const requestId = await createSupplyRequest({
         projectId: project.id,
         projectName: project.clientName || project.id.slice(0, 8),
         projectLocation: project.location,
@@ -405,6 +405,22 @@ export default function ForemanContractDetailPage() {
         note: supplyNote.trim() || undefined,
         status: 'pending',
       });
+      try {
+        await fetch('/api/notify-supply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            requestId,
+            projectName: project.clientName || project.id.slice(0, 8),
+            projectLocation: project.location,
+            foremanName: user.name,
+            items,
+            deadline: new Date(supplyDeadline).toISOString(),
+          }),
+        });
+      } catch (notifyErr) {
+        console.error('Supply Telegram notify failed:', notifyErr);
+      }
       setShowSupplyModal(false);
       setSupplyItems([{ material: '', quantity: '' }]);
       setSupplyDeadline('');
@@ -750,7 +766,7 @@ export default function ForemanContractDetailPage() {
                   </table>
                 </div>
                 <p className="mt-4 text-lg font-semibold text-red-600">
-                  {t('foreman.total_expenses') || 'Total expenses'}: {formatNumberWithSpaces(expenses.reduce((sum, e) => sum + e.amount, 0).toString())} UZS
+                  {t('foreman.total_expenses') || 'Total expenses'}: {formatNumberWithSpaces(expenses.filter(e => !e.approvalStatus || e.approvalStatus === 'approved').reduce((sum, e) => sum + e.amount, 0).toString())} UZS
                 </p>
               </>
             )}

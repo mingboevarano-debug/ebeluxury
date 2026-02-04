@@ -299,7 +299,8 @@ export default function ContractDetailPage() {
   }
 
   const totalProfit = profits.reduce((sum, p) => sum + p.amount, 0);
-  const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const approvedExpenses = expenses.filter(e => !e.approvalStatus || e.approvalStatus === 'approved');
+  const totalExpense = approvedExpenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = totalProfit - totalExpense;
   const contractPrice = contract.price || 0;
   const profitMargin = contractPrice > 0 ? ((netProfit / contractPrice) * 100).toFixed(2) : '0';

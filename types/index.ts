@@ -113,6 +113,7 @@ export interface SupplyRequest {
   foremanName: string;
   items: string[];
   itemPrices?: number[];  // Price for each material (supplier fills when accepting)
+  itemRefusedReasons?: string[];  // Per-item: if set, that item was refused with this reason (e.g. "Out of stock")
   expenseId?: string;
   deadline: Date;
   status: SupplyRequestStatus;

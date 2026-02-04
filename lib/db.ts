@@ -258,7 +258,8 @@ export const updateSupplyRequestStatus = async (
   supplierNote?: string,
   rejectedReason?: string,
   itemPrices?: number[],
-  expenseId?: string
+  expenseId?: string,
+  itemRefusedReasons?: string[]
 ): Promise<void> => {
   const requestRef = doc(db, 'supplyRequests', id);
   const updateData: any = { status };
@@ -273,6 +274,10 @@ export const updateSupplyRequestStatus = async (
 
   if (itemPrices && itemPrices.length > 0) {
     updateData.itemPrices = itemPrices;
+  }
+
+  if (itemRefusedReasons && itemRefusedReasons.length > 0) {
+    updateData.itemRefusedReasons = itemRefusedReasons;
   }
 
   if (expenseId) {

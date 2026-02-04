@@ -1624,11 +1624,11 @@ export default function FinanceDashboard() {
               onDelete={handleDeleteCategory}
             />
 
-            {/* Expense Categories */}
+            {/* Expense Categories — only approved expenses count in totals */}
             <CategoryManagement
               categories={expenseCategories}
               type="expense"
-              expenses={expenses}
+              expenses={approvedExpenses}
               onAdd={() => {
                 setCategoryForm({
                   name: '',
@@ -1937,8 +1937,9 @@ export default function FinanceDashboard() {
                     contracts.map((contract) => {
                       const contractProfits = profits.filter(p => p.projectId === contract.id);
                       const contractExpenses = expenses.filter(e => e.projectId === contract.id);
+                      const contractApprovedExpenses = contractExpenses.filter(e => !e.approvalStatus || e.approvalStatus === 'approved');
                       const contractTotalProfit = contractProfits.reduce((sum, p) => sum + p.amount, 0);
-                      const contractTotalExpense = contractExpenses.reduce((sum, e) => sum + e.amount, 0);
+                      const contractTotalExpense = contractApprovedExpenses.reduce((sum, e) => sum + e.amount, 0);
                       const contractNetProfit = contractTotalProfit - contractTotalExpense;
 
                       return (

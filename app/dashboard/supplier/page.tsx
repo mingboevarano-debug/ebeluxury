@@ -8,6 +8,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { getSupplyRequests, updateSupplyRequestStatus, createExpense, getFinanceCategories } from '@/lib/db';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-toastify';
+import * as XLSX from 'xlsx';
 import { 
   MdPendingActions, 
   MdCheckCircle, 
@@ -15,7 +16,8 @@ import {
   MdDone, 
   MdCancel,
   MdSearch,
-  MdFilterList
+  MdFilterList,
+  MdDownload
 } from 'react-icons/md';
 import { 
   FaClock, 
@@ -45,6 +47,8 @@ export default function SupplierDashboard() {
   const [rejectReason, setRejectReason] = useState('');
   const [supplierNote, setSupplierNote] = useState('');
   const [itemPrices, setItemPrices] = useState<Record<number, string>>({});
+  const [itemRefusedReason, setItemRefusedReason] = useState<Record<number, string>>({}); // key: out_of_stock | not_available | discontinued | other
+  const [itemRefusedOtherText, setItemRefusedOtherText] = useState<Record<number, string>>({}); // custom text when reason is "other"
   const [materialCategory, setMaterialCategory] = useState<FinanceCategory | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isMobileCardView, setIsMobileCardView] = useState(false);
@@ -117,11 +121,12 @@ export default function SupplierDashboard() {
     note?: string,
     reason?: string,
     prices?: number[],
-    expenseId?: string
+    expenseId?: string,
+    itemRefusedReasons?: string[]
   ) => {
     setUpdatingId(id);
     try {
-      await updateSupplyRequestStatus(id, status, note, reason, prices, expenseId);
+      await updateSupplyRequestStatus(id, status, note, reason, prices, expenseId, itemRefusedReasons);
       toast.success(t(`supplier.status_${status}`) || t('supplier.accepted'));
       await fetchRequests();
       setShowRejectModal(false);
@@ -131,6 +136,8 @@ export default function SupplierDashboard() {
       setRejectReason('');
       setSupplierNote('');
       setItemPrices({});
+      setItemRefusedReason({});
+      setItemRefusedOtherText({});
       setSelectedRequest(null);
     } catch (error) {
       console.error('Error updating request:', error);
@@ -156,26 +163,55 @@ export default function SupplierDashboard() {
     setShowInfoModal(true);
   };
 
+  const REFUSE_REASON_KEYS = ['out_of_stock', 'not_available', 'discontinued', 'other'] as const;
+
   const handleAcceptClick = (req: SupplyRequest) => {
     setSelectedRequest(req);
     const initial: Record<number, string> = {};
     req.items.forEach((_, idx) => {
-      initial[idx] = req.itemPrices?.[idx]?.toString() || '';
+      const raw = req.itemPrices?.[idx]?.toString() || '';
+      initial[idx] = formatPriceDisplay(raw);
     });
     setItemPrices(initial);
+    setItemRefusedReason({});
+    setItemRefusedOtherText({});
     setShowAcceptModal(true);
+  };
+
+  const getRefuseReasonLabel = (key: string) => {
+    if (!key) return '';
+    const k = key as typeof REFUSE_REASON_KEYS[number];
+    return t(`supplier.refuse_reason_${k}`) || key;
+  };
+
+  const formatPriceDisplay = (val: string): string => {
+    const digits = (val || '').replace(/\D/g, '');
+    if (digits === '') return '';
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  };
+
+  const parsePriceInput = (val: string): number => {
+    const num = parseFloat((val || '').replace(/\s/g, '').replace(/\u00a0/g, '')) || 0;
+    return isNaN(num) ? 0 : num;
   };
 
   const handleAcceptSubmit = async () => {
     if (!selectedRequest) return;
+    const refused = selectedRequest.items.map((_, idx) => !!itemRefusedReason[idx]);
     const prices = selectedRequest.items.map((_, idx) => {
-      const val = itemPrices[idx]?.trim();
-      const num = val ? parseFloat(val) : 0;
-      return isNaN(num) ? 0 : num;
+      if (refused[idx]) return 0;
+      return parsePriceInput(itemPrices[idx] ?? '');
     });
-    const allFilled = prices.every((p, i) => p > 0);
-    if (!allFilled) {
-      toast.warning(t('supplier.price_required') || 'Please enter price for each material');
+    const acceptedCount = prices.filter((p, i) => !refused[i] && p > 0).length;
+    if (acceptedCount === 0) {
+      toast.warning(refused.every(Boolean)
+        ? (t('supplier.refuse_need_one') || 'Refuse at least one item or enter prices for some items.')
+        : (t('supplier.price_required') || 'Please enter price for each accepted material'));
+      return;
+    }
+    const needPriceForAccepted = selectedRequest.items.some((_, idx) => !refused[idx] && parsePriceInput(itemPrices[idx] ?? '') <= 0);
+    if (needPriceForAccepted) {
+      toast.warning(t('supplier.price_required') || 'Please enter price for each accepted material');
       return;
     }
     if (!materialCategory) {
@@ -186,20 +222,17 @@ export default function SupplierDashboard() {
       toast.error(t('supplier.user_missing') || 'Current user not found');
       return;
     }
+    const itemRefusedReasonsArray = selectedRequest.items.map((_, idx) => {
+      const key = itemRefusedReason[idx];
+      if (!key) return '';
+      return key === 'other' ? (itemRefusedOtherText[idx] || t('supplier.refuse_reason_other')) : getRefuseReasonLabel(key);
+    });
 
-    const totalAmount = prices.reduce((sum, price) => sum + price, 0);
-    const expenseComment = [
-      `Contract: Delivery contract`,
-      '',
-      `${t('supplier.expense_items_title') || 'Items'}:`,
-      ...selectedRequest.items.map((item, idx) => `${idx + 1}. ${item} – ${prices[idx].toLocaleString('uz-UZ')} UZS`)
-    ].join('\n');
-    const expenseItemName = `${selectedRequest.items[0]}${selectedRequest.items.length > 1 ? ` +${selectedRequest.items.length - 1}` : ''}`;
     try {
       for (let idx = 0; idx < selectedRequest.items.length; idx++) {
+        if (refused[idx] || prices[idx] <= 0) continue;
         const expenseName = selectedRequest.items[idx];
         const expenseAmount = prices[idx];
-
         const commentParts = [
           `Shartnoma: yetkazib berish shartnomasi ${selectedRequest.projectName || selectedRequest.projectId}`,
           selectedRequest.foremanName ? `Ustasi: ${selectedRequest.foremanName}` : '',
@@ -208,8 +241,8 @@ export default function SupplierDashboard() {
           `Pozitsiya: ${expenseName}`,
           `Narx: ${expenseAmount.toLocaleString('uz-UZ')} UZS`,
         ].filter(Boolean);
-
-        await createExpense({
+        // Expense goes to queue; only counted in totals after director approves
+        const expenseId = await createExpense({
           projectId: selectedRequest.projectId,
           projectName: selectedRequest.projectName || 'Delivery contract',
           name: expenseName,
@@ -223,9 +256,30 @@ export default function SupplierDashboard() {
           approvalStatus: 'pending',
           comment: commentParts.join('\n'),
         });
+        try {
+          await fetch('/api/telegram', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: expenseName,
+              categoryName: materialCategory.name,
+              amount: expenseAmount,
+              toWhom: t('supplier.supplier_label') || 'Supplier',
+              createdByName: currentUser.name,
+              projectName: selectedRequest.projectName || 'Delivery contract',
+              paymentMethod: 'cash',
+              comment: commentParts.join('\n'),
+              pendingApproval: true,
+              expenseId,
+              showActionButtons: true,
+            }),
+          });
+        } catch (telegramErr) {
+          console.error('Telegram expense notification failed:', telegramErr);
+        }
       }
       toast.success(t('supplier.expense_created') || 'Expense recorded successfully');
-      await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices);
+      await handleStatusUpdate(selectedRequest.id, 'accepted', undefined, undefined, prices, undefined, itemRefusedReasonsArray);
     } catch (error) {
       console.error('Error creating expense from supply request:', error);
       toast.error(t('supplier.expense_create_error') || 'Failed to create expense for this order');
@@ -284,6 +338,51 @@ export default function SupplierDashboard() {
     delivered: requests.filter(r => r.status === 'delivered').length,
     completed: requests.filter(r => r.status === 'completed').length,
     rejected: requests.filter(r => r.status === 'rejected').length,
+  };
+
+  const orderToExcelRow = (req: SupplyRequest) => {
+    const itemsText = req.items.join('; ');
+    const pricesText = (req.itemPrices ?? [])
+      .map((p, i) => (req.items[i] && !req.itemRefusedReasons?.[i] ? `${req.items[i]}: ${p.toLocaleString('uz-UZ')} UZS` : ''))
+      .filter(Boolean)
+      .join('; ');
+    const total = (req.itemPrices ?? []).reduce((s, p, i) => (req.itemRefusedReasons?.[i] ? s : s + p), 0);
+    const refusedText = (req.itemRefusedReasons ?? [])
+      .map((reason, i) => (reason && req.items[i] ? `${req.items[i]}: ${reason}` : ''))
+      .filter(Boolean)
+      .join('; ');
+    return {
+      [t('supplier.project') || 'Project']: req.projectName || req.projectId,
+      [t('supplier.foreman') || 'Foreman']: req.foremanName,
+      [t('supplier.location') || 'Location']: req.projectLocation ?? '',
+      [t('supplier.status') || 'Status']: t(`supplier.status_${req.status}`) || req.status,
+      [t('supplier.deadline') || 'Deadline']: new Date(req.deadline).toLocaleString(),
+      [t('supplier.items') || 'Items']: itemsText,
+      [t('supplier.prices') || 'Prices (UZS)']: pricesText || (total > 0 ? total.toLocaleString('uz-UZ') : ''),
+      [t('supplier.refused_items') || 'Refused items']: refusedText,
+      [t('supplier.foreman_note') || 'Foreman note']: req.note ?? '',
+      [t('supplier.supplier_note') || 'Supplier note']: req.supplierNote ?? '',
+      [t('supplier.rejection_reason') || 'Rejection reason']: req.rejectedReason ?? '',
+      [t('supplier.accepted_at') || 'Accepted at']: req.acceptedAt ? new Date(req.acceptedAt).toLocaleString() : '',
+      [t('supplier.delivered_at') || 'Delivered at']: req.deliveredAt ? new Date(req.deliveredAt).toLocaleString() : '',
+    };
+  };
+
+  const downloadOrderToExcel = (req: SupplyRequest) => {
+    try {
+      const row = orderToExcelRow(req);
+      const ws = XLSX.utils.json_to_sheet([row]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, t('supplier.orders_sheet') || 'Orders');
+      const colWidths = Object.keys(row).map(() => ({ wch: 18 }));
+      ws['!cols'] = colWidths;
+      const safeName = (req.projectName || req.projectId || req.id).replace(/[^\w\s-]/g, '').slice(0, 30);
+      XLSX.writeFile(wb, `order_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      toast.success(t('supplier.excel_downloaded') || 'Order exported to Excel');
+    } catch (error) {
+      console.error('Excel export error:', error);
+      toast.error(t('supplier.excel_error') || 'Failed to export to Excel');
+    }
   };
 
   return (
@@ -393,19 +492,27 @@ export default function SupplierDashboard() {
                         {t('supplier.items')}
                       </p>
                       <ul className="space-y-1">
-                        {req.items.map((item, idx) => (
-                          <li key={idx} className="text-gray-700 flex items-start justify-between gap-2">
-                            <span className="flex items-start">
-                              <span className="text-indigo-600 mr-2">•</span>
-                              <span>{item}</span>
-                            </span>
-                            {req.itemPrices?.[idx] != null && req.itemPrices[idx] > 0 && (
-                              <span className="text-green-700 font-semibold whitespace-nowrap">
-                                {req.itemPrices[idx].toLocaleString()} UZS
+                        {req.items.map((item, idx) => {
+                          const refusedReason = req.itemRefusedReasons?.[idx];
+                          return (
+                            <li key={idx} className={`text-gray-700 flex items-start justify-between gap-2 ${refusedReason ? 'opacity-90' : ''}`}>
+                              <span className="flex items-start flex-wrap flex-1 min-w-0">
+                                <span className="text-indigo-600 mr-2">•</span>
+                                <span>{item}</span>
+                                {refusedReason && (
+                                  <span className="ml-2 text-red-600 text-sm">
+                                    ({t('supplier.refuse_item')}: {refusedReason})
+                                  </span>
+                                )}
                               </span>
-                            )}
-                          </li>
-                        ))}
+                              {!refusedReason && req.itemPrices?.[idx] != null && req.itemPrices[idx] > 0 && (
+                                <span className="text-green-700 font-semibold whitespace-nowrap">
+                                  {req.itemPrices[idx].toLocaleString()} UZS
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
 
@@ -504,6 +611,17 @@ export default function SupplierDashboard() {
                           </button>
                         </>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => downloadOrderToExcel(req)}
+                        className={`
+                          ${isMobileCardView ? 'w-full' : ''}
+                          inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-semibold border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
+                        `}
+                      >
+                        <MdDownload className="w-4 h-4" />
+                        <span>{t('supplier.download_excel') || 'Download to Excel'}</span>
+                      </button>
                       {req.status === 'accepted' && (
                         <>
                           <button
@@ -578,30 +696,75 @@ export default function SupplierDashboard() {
           )}
         </div>
 
-        {/* Accept Modal - Enter price for each material */}
+        {/* Accept Modal - Enter price for each material, optional refuse per item */}
         {showAcceptModal && selectedRequest && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white p-6 rounded-lg max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="bg-white p-6 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <h2 className="text-xl font-semibold mb-4">{t('supplier.accept_order')} - {t('supplier.enter_prices')}</h2>
               <p className="text-sm text-gray-600 mb-4">{t('supplier.enter_price_hint')}</p>
               <div className="space-y-3 mb-6">
-                {selectedRequest.items.map((item, idx) => (
-                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center gap-2 p-3 bg-gray-50 rounded-lg">
-                    <span className="flex-1 text-gray-800 font-medium truncate">{item}</span>
-                    <div className="flex items-center gap-2 sm:w-40">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={itemPrices[idx] ?? ''}
-                        onChange={(e) => setItemPrices((p) => ({ ...p, [idx]: e.target.value }))}
-                        placeholder={t('supplier.price_placeholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-                      />
-                      <span className="text-sm text-gray-500 whitespace-nowrap">UZS</span>
+                {selectedRequest.items.map((item, idx) => {
+                  const isRefused = !!itemRefusedReason[idx];
+                  return (
+                    <div key={idx} className={`p-3 rounded-lg border ${isRefused ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="flex-1 text-gray-800 font-medium truncate min-w-0">{item}</span>
+                          {!isRefused && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={itemPrices[idx] ?? ''}
+                                onChange={(e) => setItemPrices((p) => ({ ...p, [idx]: formatPriceDisplay(e.target.value) }))}
+                                placeholder={t('supplier.price_placeholder')}
+                                className="w-32 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                              />
+                              <span className="text-sm text-gray-500 whitespace-nowrap">UZS</span>
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isRefused) {
+                                setItemRefusedReason((r) => { const next = { ...r }; delete next[idx]; return next; });
+                                setItemRefusedOtherText((o) => { const next = { ...o }; delete next[idx]; return next; });
+                              } else {
+                                setItemRefusedReason((r) => ({ ...r, [idx]: 'out_of_stock' }));
+                              }
+                            }}
+                            className="shrink-0 px-3 py-1.5 rounded-lg text-sm font-semibold border bg-red-600 border-red-600 text-white hover:bg-red-700"
+                          >
+                            {isRefused ? t('supplier.refuse_item') + ' ✓' : t('supplier.refuse_item')}
+                          </button>
+                        </div>
+                        {isRefused && (
+                          <div className="flex flex-wrap items-center gap-2 pl-0 sm:pl-2">
+                            <label className="text-sm text-gray-600">{t('supplier.refuse_reason')}:</label>
+                            <select
+                              value={itemRefusedReason[idx] || ''}
+                              onChange={(e) => setItemRefusedReason((r) => ({ ...r, [idx]: e.target.value }))}
+                              className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                            >
+                              {REFUSE_REASON_KEYS.map((key) => (
+                                <option key={key} value={key}>{getRefuseReasonLabel(key)}</option>
+                              ))}
+                            </select>
+                            {itemRefusedReason[idx] === 'other' && (
+                              <input
+                                type="text"
+                                value={itemRefusedOtherText[idx] ?? ''}
+                                onChange={(e) => setItemRefusedOtherText((o) => ({ ...o, [idx]: e.target.value }))}
+                                placeholder={t('supplier.refuse_reason_other')}
+                                className="flex-1 min-w-[120px] px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="flex space-x-2">
                 <button
@@ -613,7 +776,7 @@ export default function SupplierDashboard() {
                   {t('supplier.confirm_accept')}
                 </button>
                 <button
-                  onClick={() => { setShowAcceptModal(false); setSelectedRequest(null); setItemPrices({}); }}
+                  onClick={() => { setShowAcceptModal(false); setSelectedRequest(null); setItemPrices({}); setItemRefusedReason({}); setItemRefusedOtherText({}); }}
                   className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-semibold"
                 >
                   {t('foreman.cancel')}
@@ -738,16 +901,24 @@ export default function SupplierDashboard() {
               <div className="mt-4 bg-gray-50 border border-gray-200 rounded-lg p-4">
                 <p className="font-semibold text-gray-900 mb-2">{t('supplier.items')}</p>
                 <ul className="space-y-2">
-                  {selectedRequest.items.map((item, idx) => (
-                    <li key={idx} className="flex justify-between text-sm text-gray-700">
-                      <span>{item}</span>
-                      {selectedRequest.itemPrices?.[idx] != null && selectedRequest.itemPrices[idx] > 0 && (
-                        <span className="font-semibold text-indigo-600">
-                          {selectedRequest.itemPrices[idx].toLocaleString('uz-UZ')} UZS
+                  {selectedRequest.items.map((item, idx) => {
+                    const refusedReason = selectedRequest.itemRefusedReasons?.[idx];
+                    return (
+                      <li key={idx} className="flex justify-between text-sm text-gray-700 flex-wrap gap-1">
+                        <span className="flex-1 min-w-0">
+                          {item}
+                          {refusedReason && (
+                            <span className="ml-1 text-red-600">({t('supplier.refuse_item')}: {refusedReason})</span>
+                          )}
                         </span>
-                      )}
-                    </li>
-                  ))}
+                        {!refusedReason && selectedRequest.itemPrices?.[idx] != null && selectedRequest.itemPrices[idx] > 0 && (
+                          <span className="font-semibold text-indigo-600">
+                            {selectedRequest.itemPrices[idx].toLocaleString('uz-UZ')} UZS
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
               <div className="mt-4 space-y-2 text-sm text-gray-600">

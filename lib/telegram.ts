@@ -56,8 +56,9 @@ export async function editMessageText(
   return res.ok;
 }
 
+// Director receives expense queue with Accept/Refuse buttons (primary admin)
 const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '5310317109';
-const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '1119588540')
+const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);
@@ -147,18 +148,14 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
     
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
     
-    const inlineKeyboard = data.showActionButtons === false ? undefined : [
+    // Pending expenses: show Accept/Refuse so director can approve from Telegram
+    const showButtons = data.pendingApproval && (data.showActionButtons !== false);
+    const inlineKeyboard = showButtons && data.expenseId ? [
       [
-        {
-          text: '✅ Tasdiqlash',
-          callback_data: `EXPENSE_APPROVE:${data.expenseId || 'unknown'}`
-        },
-        {
-          text: '🚫 Bekor qilish',
-          callback_data: `EXPENSE_REJECT:${data.expenseId || 'unknown'}`
-        }
-      ]
-    ];
+        { text: '✅ Tasdiqlash', callback_data: `EXPENSE_APPROVE:${data.expenseId}` },
+        { text: '🚫 Bekor qilish', callback_data: `EXPENSE_REJECT:${data.expenseId}` },
+      ],
+    ] : undefined;
 
     const simpleMessage = data.pendingApproval
       ? `📢 Yangi xarajat: ${escapeHtml(data.name)} (${amountFormatted} UZS).\nIltimos, saytga kirib tasdiqlang.`
@@ -168,7 +165,7 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
 
     for (const adminId of TELEGRAM_ADMIN_IDS) {
       try {
-        const isPrimary = adminId === primaryAdminId;
+        const isDirector = adminId === primaryAdminId;
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -176,13 +173,11 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
           },
           body: JSON.stringify({
             chat_id: adminId,
-            text: isPrimary ? message : simpleMessage,
+            text: isDirector ? message : simpleMessage,
             parse_mode: 'HTML',
-            ...(isPrimary && inlineKeyboard && {
-              reply_markup: {
-                inline_keyboard: inlineKeyboard
-              }
-            })
+            ...(isDirector && inlineKeyboard && {
+              reply_markup: { inline_keyboard: inlineKeyboard },
+            }),
           }),
         });
 
@@ -211,4 +206,73 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+/** Callback data for supply request buttons: SUPPLY_ACCEPT:id or SUPPLY_REFUSE:id */
+export function parseSupplyCallbackData(data: string): { action: 'accept' | 'refuse'; requestId: string } | null {
+  const match = data.match(/^SUPPLY_(ACCEPT|REFUSE):(.+)$/);
+  if (!match) return null;
+  const action = match[1] === 'ACCEPT' ? 'accept' : 'refuse';
+  const requestId = match[2].trim();
+  return requestId && requestId !== 'unknown' ? { action, requestId } : null;
+}
+
+export interface SupplyRequestNotificationData {
+  requestId: string;
+  projectName: string;
+  projectLocation?: string;
+  foremanName: string;
+  items: string[];
+  deadline: Date;
+}
+
+/** Send Telegram notification for new supplier order; recipients get [Accept] [Refuse] buttons. */
+export async function sendSupplyRequestNotification(data: SupplyRequestNotificationData): Promise<boolean> {
+  try {
+    const deadlineStr = new Date(data.deadline).toLocaleString('uz-UZ');
+    const itemsPreview = data.items.length > 3
+      ? data.items.slice(0, 3).join(', ') + ` +${data.items.length - 3}`
+      : data.items.join(', ');
+    let message = `📦 <b>Yangi ta'minot buyurtmasi</b>\n\n`;
+    message += `🏗️ <b>Loyiha:</b> ${escapeHtml(data.projectName)}\n`;
+    if (data.projectLocation) message += `📍 ${escapeHtml(data.projectLocation)}\n`;
+    message += `👤 <b>Boshliq:</b> ${escapeHtml(data.foremanName)}\n`;
+    message += `📋 <b>Buyumlar:</b> ${escapeHtml(itemsPreview)}\n`;
+    message += `⏰ <b>Muddat:</b> ${escapeHtml(deadlineStr)}\n`;
+
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const inlineKeyboard = [
+      [
+        { text: '✅ Qabul qilish', callback_data: `SUPPLY_ACCEPT:${data.requestId}` },
+        { text: '🚫 Rad etish', callback_data: `SUPPLY_REFUSE:${data.requestId}` },
+      ],
+    ];
+
+    let delivered = false;
+    for (const adminId of TELEGRAM_ADMIN_IDS) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: adminId,
+            text: message,
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: inlineKeyboard },
+          }),
+        });
+        if (res.ok) delivered = true;
+        else {
+          const err = await res.json();
+          console.error(`Telegram supply notify error for ${adminId}:`, err);
+        }
+      } catch (e) {
+        console.error(`Telegram supply notify failed for ${adminId}:`, e);
+      }
+    }
+    return delivered;
+  } catch (error) {
+    console.error('Error sending supply request Telegram notification:', error);
+    return false;
+  }
 }

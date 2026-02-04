@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateExpense, getExpenses } from '@/lib/db';
+import { updateExpense, getExpenses, updateSupplyRequestStatus } from '@/lib/db';
 import {
   getTelegramBotToken,
   parseExpenseCallbackData,
+  parseSupplyCallbackData,
   answerCallbackQuery,
   editMessageText,
   isTelegramAdmin,
@@ -84,7 +85,36 @@ export async function POST(request: NextRequest) {
     }
 
     const callbackId = body.callback_query.id;
-    const parsed = parseExpenseCallbackData(body.callback_query.data);
+    const data = body.callback_query.data;
+
+    // Supply request: Accept / Refuse
+    const supplyParsed = parseSupplyCallbackData(data);
+    if (supplyParsed) {
+      const { action, requestId } = supplyParsed;
+      const resultText = action === 'refuse' ? '🚫 Buyurtma rad etildi' : '✅ Qabul qilindi (saytda narx kiriting)';
+      await answerCallbackQuery(callbackId, { text: resultText, showAlert: false });
+      try {
+        if (action === 'refuse') {
+          await updateSupplyRequestStatus(requestId, 'rejected', undefined, 'Refused from Telegram');
+        }
+      } catch (dbErr) {
+        console.error('Telegram webhook: updateSupplyRequestStatus failed', requestId, dbErr);
+        await answerCallbackQuery(callbackId, { text: 'Xatolik', showAlert: true });
+        return NextResponse.json({ ok: true });
+      }
+      const msg = body.callback_query.message;
+      if (msg?.chat?.id != null && msg?.message_id != null) {
+        const currentText = (msg.text ?? '').replace(/<[^>]+>/g, '').trim();
+        const newText = `${currentText}\n\n${resultText}`;
+        try {
+          await editMessageText(msg.chat.id, msg.message_id, newText, { removeReplyMarkup: true });
+        } catch (_) {}
+      }
+      return NextResponse.json({ ok: true });
+    }
+
+    // Expense: Approve / Reject
+    const parsed = parseExpenseCallbackData(data);
     if (!parsed) {
       await answerCallbackQuery(callbackId, { text: 'Noto‘g‘ri tugma', showAlert: true });
       return NextResponse.json({ ok: true });
@@ -94,7 +124,6 @@ export async function POST(request: NextRequest) {
     const resultText =
       action === 'approve' ? '✅ Tasdiqlandi' : '🚫 Rad etildi';
 
-    // Answer callback first so the button stops loading
     await answerCallbackQuery(callbackId, { text: resultText, showAlert: false });
 
     try {
@@ -144,21 +173,23 @@ export async function GET(request: NextRequest) {
   const token = getTelegramBotToken();
 
   if (searchParams.get('set') === '1') {
-    const baseUrl =
-      process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : process.env.NEXT_PUBLIC_APP_URL
-          ? process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')
-          : null;
-
+    // Prefer request origin (e.g. https://www.ebe-luxury.uz), then env, then production domain
+    let baseUrl: string | null = null;
+    try {
+      const url = new URL(request.url);
+      baseUrl = url.origin;
+    } catch (_) {}
     if (!baseUrl) {
-      return NextResponse.json(
-        { ok: false, error: 'Set VERCEL_URL or NEXT_PUBLIC_APP_URL so webhook URL can be built' },
-        { status: 500 }
-      );
+      baseUrl =
+        process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
     }
-
-    const webhookUrl = `${baseUrl}/api/telegram-webhook`;
+    if (!baseUrl && process.env.NEXT_PUBLIC_APP_URL) {
+      baseUrl = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+    }
+    if (!baseUrl) {
+      baseUrl = 'https://www.ebe-luxury.uz';
+    }
+    const webhookUrl = `${baseUrl.replace(/\/$/, '')}/api/telegram-webhook`;
     const url = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;
     const res = await fetch(url);
     const data = await res.json();
