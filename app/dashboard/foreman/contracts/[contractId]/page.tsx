@@ -190,10 +190,13 @@ export default function ForemanContractDetailPage() {
         totalWorkers: 0,
       });
 
-      await updateContract(contract.id, {
-        status: 'in_progress',
-        foremanId: user.id,
-      });
+      // Only update contract when first foreman takes it (pending → in_progress). Additional foremen just create their project.
+      if (contract.status === 'pending') {
+        await updateContract(contract.id, {
+          status: 'in_progress',
+          foremanId: user.id,
+        });
+      }
 
       toast.success(t('foreman.select_project') || 'Project selected successfully');
       await fetchData();
@@ -394,16 +397,10 @@ export default function ForemanContractDetailPage() {
     setSubmittingSupply(true);
     try {
       const items = validItems.map((i) => `${i.material.trim()} x${i.quantity.trim()}`);
-<<<<<<< HEAD
       const projectName = project.clientName || project.id.slice(0, 8);
       await createSupplyRequest({
         projectId: project.id,
         projectName,
-=======
-      await createSupplyRequest({
-        projectId: project.id,
-        projectName: project.clientName || project.id.slice(0, 8),
->>>>>>> 7a02268ce9a8bf60494f090fc89dd9af45b86ed8
         projectLocation: project.location,
         foremanId: user.id,
         foremanName: user.name,
@@ -412,7 +409,6 @@ export default function ForemanContractDetailPage() {
         note: supplyNote.trim() || undefined,
         status: 'pending',
       });
-<<<<<<< HEAD
       try {
         await fetch('/api/notify-supply', {
           method: 'POST',
@@ -428,8 +424,6 @@ export default function ForemanContractDetailPage() {
       } catch (notifyErr) {
         console.error('Supply Telegram notify failed:', notifyErr);
       }
-=======
->>>>>>> 7a02268ce9a8bf60494f090fc89dd9af45b86ed8
       setShowSupplyModal(false);
       setSupplyItems([{ material: '', quantity: '' }]);
       setSupplyDeadline('');
@@ -457,8 +451,9 @@ export default function ForemanContractDetailPage() {
     return null;
   }
 
-  const canSelect = contract.status === 'pending' && !project;
-  const canViewProject = contract.status === 'in_progress' && project;
+  // Any foreman can start working on a contract (pending or in_progress) if they don't have a project for it yet.
+  const canSelect = !project;
+  const canViewProject = !!project;
 
   return (
     <Layout>
@@ -781,7 +776,7 @@ export default function ForemanContractDetailPage() {
             )}
           </div>
 
-          {/* Select Project (pending contracts) */}
+          {/* Start working on this contract (any foreman can join) */}
           {canSelect && (
             <div className="mt-8 pt-6 border-t border-gray-200">
               <button
@@ -790,7 +785,7 @@ export default function ForemanContractDetailPage() {
                 className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-6 py-3 rounded-lg font-semibold flex items-center space-x-2 transition-colors"
               >
                 <FaSearch className="w-5 h-5" />
-                <span>{selecting ? (t('foreman.saving') || 'Saving...') : t('foreman.select_project')}</span>
+                <span>{selecting ? (t('foreman.saving') || 'Saving...') : (t('foreman.select_project') || 'Start working on this contract')}</span>
               </button>
             </div>
           )}

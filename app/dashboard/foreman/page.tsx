@@ -3,13 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import { Contract, User } from '@/types';
+import { Contract, Project, User } from '@/types';
 import { subscribeToAuthChanges } from '@/lib/auth';
-import { getContracts } from '@/lib/db';
+import { getContracts, getProjectsByForeman } from '@/lib/db';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function ForemanDashboard() {
   const [contracts, setContracts] = useState<Contract[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const { t } = useLanguage();
   const router = useRouter();
@@ -19,13 +20,18 @@ export default function ForemanDashboard() {
       if (currentUser) {
         setUser(currentUser);
         try {
-          const data = await getContracts();
-          setContracts(data);
+          const [contractsData, projectsData] = await Promise.all([
+            getContracts(),
+            currentUser.role === 'foreman' ? getProjectsByForeman(currentUser.id) : Promise.resolve([]),
+          ]);
+          setContracts(contractsData);
+          setProjects(projectsData || []);
         } catch (error) {
           console.error('Error fetching contracts:', error);
         }
       } else {
         setContracts([]);
+        setProjects([]);
       }
     });
     return () => unsubscribe();
@@ -67,8 +73,10 @@ export default function ForemanDashboard() {
                     </td>
                   </tr>
                 ) : (
-                  contracts.map((contract) => {
-                    const isMyContract = contract.status === 'in_progress' && contract.foremanId === user?.id;
+                  contracts
+                    .filter((c) => c.status === 'pending' || c.status === 'in_progress')
+                    .map((contract) => {
+                    const isMyContract = projects.some((p) => p.contractId === contract.id);
                     return (
                       <tr
                         key={contract.id}
