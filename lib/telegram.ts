@@ -56,13 +56,18 @@ export async function editMessageText(
   return res.ok;
 }
 
-// Director receives expense queue with Accept/Refuse buttons (primary admin)
+// Director receives expense queue with Accept/Refuse buttons (primary admin + additional directors)
 const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '5310317109';
 const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);
-const TELEGRAM_ADMIN_IDS = Array.from(new Set([primaryAdminId, ...additionalAdminIds])).filter(Boolean);
+const additionalDirectorIds = (process.env.TELEGRAM_ADDITIONAL_DIRECTOR_IDS ?? '1119588540')
+  .split(',')
+  .map(id => id.trim())
+  .filter(Boolean);
+const TELEGRAM_DIRECTOR_IDS = Array.from(new Set([primaryAdminId, ...additionalDirectorIds])).filter(Boolean);
+const TELEGRAM_ADMIN_IDS = Array.from(new Set([primaryAdminId, ...additionalAdminIds, ...TELEGRAM_DIRECTOR_IDS])).filter(Boolean);
 
 export function isTelegramAdmin(chatId: string | number): boolean {
   const id = String(chatId);
@@ -165,7 +170,7 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
 
     for (const adminId of TELEGRAM_ADMIN_IDS) {
       try {
-        const isDirector = adminId === primaryAdminId;
+        const isDirector = TELEGRAM_DIRECTOR_IDS.includes(adminId);
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -217,9 +222,12 @@ export function parseSupplyCallbackData(data: string): { action: 'accept' | 'ref
   return requestId && requestId !== 'unknown' ? { action, requestId } : null;
 }
 
+<<<<<<< HEAD
 // Supplier receives "new order" notification with link to web app
 const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '8299164114';
 
+=======
+>>>>>>> 7a02268ce9a8bf60494f090fc89dd9af45b86ed8
 export interface SupplyRequestNotificationData {
   requestId: string;
   projectName: string;
@@ -229,6 +237,7 @@ export interface SupplyRequestNotificationData {
   deadline: Date;
 }
 
+<<<<<<< HEAD
 /** Send Telegram to supplier: new order from foreman, please open web app and accept. */
 export async function sendSupplyOrderToSupplier(data: {
   projectName: string;
