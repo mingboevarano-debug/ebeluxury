@@ -394,7 +394,7 @@ export default function ForemanContractDetailPage() {
     setSubmittingSupply(true);
     try {
       const items = validItems.map((i) => `${i.material.trim()} x${i.quantity.trim()}`);
-      const requestId = await createSupplyRequest({
+      await createSupplyRequest({
         projectId: project.id,
         projectName: project.clientName || project.id.slice(0, 8),
         projectLocation: project.location,
@@ -405,22 +405,6 @@ export default function ForemanContractDetailPage() {
         note: supplyNote.trim() || undefined,
         status: 'pending',
       });
-      try {
-        await fetch('/api/notify-supply', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            requestId,
-            projectName: project.clientName || project.id.slice(0, 8),
-            projectLocation: project.location,
-            foremanName: user.name,
-            items,
-            deadline: new Date(supplyDeadline).toISOString(),
-          }),
-        });
-      } catch (notifyErr) {
-        console.error('Supply Telegram notify failed:', notifyErr);
-      }
       setShowSupplyModal(false);
       setSupplyItems([{ material: '', quantity: '' }]);
       setSupplyDeadline('');

@@ -121,10 +121,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { action, expenseId } = parsed;
-    const resultText =
-      action === 'approve' ? '✅ Tasdiqlandi' : '🚫 Rad etildi';
-
-    await answerCallbackQuery(callbackId, { text: resultText, showAlert: false });
+    let resultText = action === 'approve' ? '✅ Tasdiqlandi' : '🚫 Rad etildi';
 
     try {
       const status = action === 'approve' ? 'approved' : 'rejected';
@@ -140,12 +137,15 @@ export async function POST(request: NextRequest) {
       });
     } catch (dbError) {
       console.error('Telegram webhook: updateExpense failed', expenseId, dbError);
+      resultText = '❌ Xarajat yangilanmadi';
       await answerCallbackQuery(callbackId, {
-        text: 'Xarajat yangilanmadi (xatolik)',
+        text: resultText,
         showAlert: true,
       });
-      return NextResponse.json({ ok: true }, { status: 200 });
+      return NextResponse.json({ ok: true });
     }
+
+    await answerCallbackQuery(callbackId, { text: resultText, showAlert: false });
 
     const message = body.callback_query.message;
     const chatId = message?.chat?.id;
