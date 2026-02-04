@@ -56,18 +56,12 @@ export async function editMessageText(
   return res.ok;
 }
 
-// Director receives expense queue with Accept/Refuse buttons (primary admin + additional directors)
-const primaryAdminId = process.env.TELEGRAM_ADMIN_ID || '5310317109';
-const additionalAdminIds = (process.env.TELEGRAM_ADDITIONAL_ADMIN_IDS ?? '')
+// 2 directors (expense/supply notifications with Accept/Refuse buttons); 1 supplier (supply orders only)
+const TELEGRAM_DIRECTOR_IDS = (process.env.TELEGRAM_DIRECTOR_IDS ?? '5310317109,1119588540')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);
-const additionalDirectorIds = (process.env.TELEGRAM_ADDITIONAL_DIRECTOR_IDS ?? '1119588540')
-  .split(',')
-  .map(id => id.trim())
-  .filter(Boolean);
-const TELEGRAM_DIRECTOR_IDS = Array.from(new Set([primaryAdminId, ...additionalDirectorIds])).filter(Boolean);
-const TELEGRAM_ADMIN_IDS = Array.from(new Set([primaryAdminId, ...additionalAdminIds, ...TELEGRAM_DIRECTOR_IDS])).filter(Boolean);
+const TELEGRAM_ADMIN_IDS = [...TELEGRAM_DIRECTOR_IDS]; // admins = directors only
 
 export function isTelegramAdmin(chatId: string | number): boolean {
   const id = String(chatId);
@@ -224,6 +218,7 @@ export function parseSupplyCallbackData(data: string): { action: 'accept' | 'ref
 
 <<<<<<< HEAD
 // Supplier receives "new order" notification with link to web app
+// 1 supplier (receives supply order notifications)
 const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '8299164114';
 
 =======
