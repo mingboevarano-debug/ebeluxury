@@ -13,7 +13,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Contract, Project, Report, Warning, User, SupplyRequest, SupplyRequestStatus, Meeting, Attendance, AttendanceStatus, Profit, Expense, FinanceCategory, OfficeWaste, OfficeWasteCategory, Draft } from '@/types';
+import { Contract, Project, Report, Warning, User, SupplyRequest, SupplyRequestStatus, Meeting, Attendance, AttendanceStatus, Profit, Expense, FinanceCategory, OfficeWaste, OfficeWasteCategory, Draft, SystemSettings } from '@/types';
 import { Service } from '@/lib/services';
 
 // Contracts
@@ -93,6 +93,21 @@ export const getProjectsByForeman = async (foremanId: string): Promise<Project[]
   }) as Project[];
 
   return projects.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+};
+
+export const getProjectsByContractId = async (contractId: string): Promise<Project[]> => {
+  const projectsRef = collection(db, 'projects');
+  const q = query(projectsRef, where('contractId', '==', contractId));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.() || new Date(),
+      deadline: data.deadline?.toDate?.() || new Date(),
+    } as Project;
+  });
 };
 
 export const getAllProjects = async (): Promise<Project[]> => {
@@ -618,6 +633,20 @@ export const deleteFinanceCategory = async (id: string): Promise<void> => {
   await deleteDoc(categoryRef);
 };
 
+export const getFinanceCategoryById = async (id: string): Promise<FinanceCategory | null> => {
+  const categoryRef = doc(db, 'financeCategories', id);
+  const categorySnap = await getDoc(categoryRef);
+  if (categorySnap.exists()) {
+    const data = categorySnap.data();
+    return {
+      id: categorySnap.id,
+      ...data,
+      createdAt: data.createdAt?.toDate?.() || new Date(),
+    } as FinanceCategory;
+  }
+  return null;
+};
+
 // Profits
 export const createProfit = async (profit: Omit<Profit, 'id' | 'createdAt'>): Promise<string> => {
   const profitRef = doc(collection(db, 'profits'));
@@ -933,3 +962,18 @@ export const deleteDraft = async (id: string): Promise<void> => {
   await deleteDoc(draftRef);
 };
 
+
+// System Settings
+export const getSystemSettings = async (): Promise<SystemSettings> => {
+  const settingsRef = doc(db, 'system', 'settings');
+  const settingsSnap = await getDoc(settingsRef);
+  if (settingsSnap.exists()) {
+    return settingsSnap.data() as SystemSettings;
+  }
+  return {};
+};
+
+export const updateSystemSettings = async (updates: Partial<SystemSettings>): Promise<void> => {
+  const settingsRef = doc(db, 'system', 'settings');
+  await setDoc(settingsRef, updates, { merge: true });
+};

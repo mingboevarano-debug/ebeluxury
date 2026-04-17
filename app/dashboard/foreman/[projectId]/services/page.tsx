@@ -50,10 +50,13 @@ export default function ProjectServicesPage() {
     }
   }, [project]);
 
+  const [isReadOnly, setIsReadOnly] = useState(false);
+
   const fetchProject = async () => {
+    let currentUser: { role: string } | null = null;
     try {
-      const user = await getCurrentUser();
-      if (!user) {
+      currentUser = await getCurrentUser();
+      if (!currentUser) {
         router.push('/login');
         return;
       }
@@ -61,22 +64,25 @@ export default function ProjectServicesPage() {
       const projectData = await getProjectById(projectId);
       if (!projectData) {
         toast.error('Project not found');
-        router.push('/dashboard/foreman');
+        router.push(currentUser.role === 'technical_supervisor' ? '/dashboard/technical_supervisor' : '/dashboard/foreman');
         return;
       }
 
-      // Verify the project belongs to the current foreman
-      if (projectData.foremanId !== user.id) {
+      const techSupervisor = currentUser.role === 'technical_supervisor';
+      if (techSupervisor) {
+        setIsReadOnly(true);
+        setProject(projectData);
+      } else if (projectData.foremanId !== (currentUser as { id: string; role: string }).id) {
         toast.error('Unauthorized access');
         router.push('/dashboard/foreman');
         return;
+      } else {
+        setProject(projectData);
       }
-
-      setProject(projectData);
     } catch (error) {
       console.error('Error fetching project:', error);
       toast.error('Failed to load project');
-      router.push('/dashboard/foreman');
+      router.push(currentUser?.role === 'technical_supervisor' ? '/dashboard/technical_supervisor' : '/dashboard/foreman');
     } finally {
       setLoading(false);
     }
@@ -191,7 +197,7 @@ export default function ProjectServicesPage() {
       <div className="px-3 sm:px-4 py-4 sm:py-6">
         <div className="mb-4 sm:mb-6">
           <button
-            onClick={() => router.push('/dashboard/foreman')}
+            onClick={() => router.push(isReadOnly ? '/dashboard/technical_supervisor' : '/dashboard/foreman')}
             className="mb-3 sm:mb-4 text-indigo-600 hover:text-indigo-800 font-medium flex items-center transition-colors"
           >
             <HiArrowLeft className="w-5 h-5 mr-2 flex-shrink-0" />
@@ -203,15 +209,17 @@ export default function ProjectServicesPage() {
           <p className="text-sm sm:text-base text-gray-600 truncate">{project.location}</p>
         </div>
 
-        {/* Info Banner */}
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-3 sm:p-4 mb-4 sm:mb-6 rounded-r-lg">
-          <div className="flex items-start">
-            <HiInformationCircle className="w-5 h-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
-            <p className="text-sm text-blue-700">
-              {t('foreman.select_services_info')}
-            </p>
+        {/* Info Banner - hide when read-only */}
+        {!isReadOnly && (
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-3 sm:p-4 mb-4 sm:mb-6 rounded-r-lg">
+            <div className="flex items-start">
+              <HiInformationCircle className="w-5 h-5 text-blue-500 mt-0.5 mr-3 flex-shrink-0" />
+              <p className="text-sm text-blue-700">
+                {t('foreman.select_services_info')}
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Statistics Card */}
         <div className="bg-white shadow-lg rounded-lg p-4 sm:p-6 mb-4 sm:mb-6 border-2 border-indigo-100">
@@ -230,43 +238,45 @@ export default function ProjectServicesPage() {
             </div>
           </div>
 
-          {/* Save Button */}
-          <div className="border-t-2 border-gray-200 pt-6">
-            <button
-              onClick={handleSaveServices}
-              disabled={saving || selectedServices.length === 0}
-              className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all transform ${saving
-                  ? 'bg-gray-400 cursor-not-allowed'
-                  : saveSuccess
-                    ? 'bg-green-600 hover:bg-green-700'
-                    : selectedServices.length === 0
-                      ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 hover:scale-[1.02] active:scale-[0.98]'
-                } text-white flex items-center justify-center space-x-3`}
-            >
-              {saving ? (
-                <>
-                  <AiOutlineLoading3Quarters className="animate-spin h-5 w-5 text-white" />
-                  <span>{t('foreman.saving')}</span>
-                </>
-              ) : saveSuccess ? (
-                <>
-                  <HiCheck className="w-6 h-6" />
-                  <span>{t('foreman.saved')}</span>
-                </>
-              ) : (
-                <>
-                  <HiSave className="w-6 h-6" />
-                  <span>{t('foreman.save_services')}</span>
-                </>
+          {/* Save Button - hide when read-only (technical supervisor) */}
+          {!isReadOnly && (
+            <div className="border-t-2 border-gray-200 pt-6">
+              <button
+                onClick={handleSaveServices}
+                disabled={saving || selectedServices.length === 0}
+                className={`w-full py-4 px-6 rounded-xl font-bold text-lg shadow-lg transition-all transform ${saving
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : saveSuccess
+                      ? 'bg-green-600 hover:bg-green-700'
+                      : selectedServices.length === 0
+                        ? 'bg-gray-300 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 hover:scale-[1.02] active:scale-[0.98]'
+                  } text-white flex items-center justify-center space-x-3`}
+              >
+                {saving ? (
+                  <>
+                    <AiOutlineLoading3Quarters className="animate-spin h-5 w-5 text-white" />
+                    <span>{t('foreman.saving')}</span>
+                  </>
+                ) : saveSuccess ? (
+                  <>
+                    <HiCheck className="w-6 h-6" />
+                    <span>{t('foreman.saved')}</span>
+                  </>
+                ) : (
+                  <>
+                    <HiSave className="w-6 h-6" />
+                    <span>{t('foreman.save_services')}</span>
+                  </>
+                )}
+              </button>
+              {selectedServices.length === 0 && (
+                <p className="text-center text-sm text-gray-500 mt-3">
+                  {t('foreman.no_services_selected')}
+                </p>
               )}
-            </button>
-            {selectedServices.length === 0 && (
-              <p className="text-center text-sm text-gray-500 mt-3">
-                {t('foreman.no_services_selected')}
-              </p>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* Services List */}
@@ -303,59 +313,72 @@ export default function ProjectServicesPage() {
                                 {getServiceName(service)}
                               </p>
                             </div>
-                            <button
-                              onClick={() => handleToggleService(service.id)}
-                              className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-all transform hover:scale-110 active:scale-95 shadow-md ${isSelected
-                                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                                  : 'bg-indigo-500 hover:bg-indigo-600 text-white'
-                                }`}
-                              title={isSelected ? t('foreman.remove_service') : t('foreman.add_service')}
-                            >
-                              {isSelected ? '−' : '+'}
-                            </button>
+                            {!isReadOnly && (
+                              <button
+                                onClick={() => handleToggleService(service.id)}
+                                className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-all transform hover:scale-110 active:scale-95 shadow-md ${isSelected
+                                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                                    : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                                  }`}
+                                title={isSelected ? t('foreman.remove_service') : t('foreman.add_service')}
+                              >
+                                {isSelected ? '−' : '+'}
+                              </button>
+                            )}
                           </div>
                           {isSelected && (
                             <div className="flex-shrink-0 flex flex-col gap-2 w-full sm:w-auto sm:min-w-[200px]">
-                              <div className="flex flex-wrap gap-2">
-                                <button
-                                  onClick={() => handleSetStatus(service.id, 'done')}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'done'
-                                      ? 'bg-green-600 text-white shadow'
-                                      : 'bg-green-100 text-green-700 hover:bg-green-200'
-                                    }`}
-                                >
-                                  <HiCheckCircle className="w-4 h-4" />
-                                  {t('foreman.status_done')}
-                                </button>
-                                <button
-                                  onClick={() => handleSetStatus(service.id, 'warning')}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'warning'
-                                      ? 'bg-amber-600 text-white shadow'
-                                      : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                                    }`}
-                                >
-                                  <HiExclamation className="w-4 h-4" />
-                                  {t('foreman.status_warning')}
-                                </button>
-                                <button
-                                  onClick={() => handleSetStatus(service.id, 'problem')}
-                                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'problem'
-                                      ? 'bg-red-600 text-white shadow'
-                                      : 'bg-red-100 text-red-700 hover:bg-red-200'
-                                    }`}
-                                >
-                                  <HiExclamationCircle className="w-4 h-4" />
-                                  {t('foreman.status_problem')}
-                                </button>
-                              </div>
-                              {(statusData?.status === 'warning' || statusData?.status === 'problem') && (
-                                <input
-                                  type="text"
-                                  placeholder={t('foreman.status_comment_placeholder')}
-                                  value={statusData?.comment ?? ''}
-                                  onChange={(e) => handleSetStatus(service.id, statusData!.status, e.target.value)}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                                />
+                              {isReadOnly ? (
+                                <div className="flex items-center gap-2">
+                                  {statusData?.status === 'done' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex items-center gap-1"><HiCheckCircle className="w-4 h-4" />{t('foreman.status_done')}</span>}
+                                  {statusData?.status === 'warning' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 flex items-center gap-1"><HiExclamation className="w-4 h-4" />{t('foreman.status_warning')}</span>}
+                                  {statusData?.status === 'problem' && <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1"><HiExclamationCircle className="w-4 h-4" />{t('foreman.status_problem')}</span>}
+                                  {statusData?.comment && <p className="text-sm text-gray-600">{statusData.comment}</p>}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex flex-wrap gap-2">
+                                    <button
+                                      onClick={() => handleSetStatus(service.id, 'done')}
+                                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'done'
+                                          ? 'bg-green-600 text-white shadow'
+                                          : 'bg-green-100 text-green-700 hover:bg-green-200'
+                                        }`}
+                                    >
+                                      <HiCheckCircle className="w-4 h-4" />
+                                      {t('foreman.status_done')}
+                                    </button>
+                                    <button
+                                      onClick={() => handleSetStatus(service.id, 'warning')}
+                                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'warning'
+                                          ? 'bg-amber-600 text-white shadow'
+                                          : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                                        }`}
+                                    >
+                                      <HiExclamation className="w-4 h-4" />
+                                      {t('foreman.status_warning')}
+                                    </button>
+                                    <button
+                                      onClick={() => handleSetStatus(service.id, 'problem')}
+                                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${statusData?.status === 'problem'
+                                          ? 'bg-red-600 text-white shadow'
+                                          : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                        }`}
+                                    >
+                                      <HiExclamationCircle className="w-4 h-4" />
+                                      {t('foreman.status_problem')}
+                                    </button>
+                                  </div>
+                                  {(statusData?.status === 'warning' || statusData?.status === 'problem') && (
+                                    <input
+                                      type="text"
+                                      placeholder={t('foreman.status_comment_placeholder')}
+                                      value={statusData?.comment ?? ''}
+                                      onChange={(e) => handleSetStatus(service.id, statusData!.status, e.target.value)}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                    />
+                                  )}
+                                </>
                               )}
                             </div>
                           )}

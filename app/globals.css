@@ -46,3 +46,53 @@ body {
   scrollbar-color: #c1c1c1 #f1f1f1;
 }
 
+/* Projects map – Leaflet custom markers (bigger icons) */
+.custom-project-marker {
+  background: none !important;
+  border: none !important;
+}
+.project-marker-pin {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+}
+.project-marker-pin svg {
+  transition: transform 0.2s;
+}
+.project-marker-pin:hover svg {
+  transform: scale(1.12);
+}
+.project-marker-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0c4a6e;
+  background: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-top: -6px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  letter-spacing: 0.02em;
+}
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.leaflet-container {
+  font-family: inherit;
+}
+.map-popup {
+  padding: 2px 0;
+  min-width: 140px;
+}
+.map-popup strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+.map-popup-coords {
+  color: #64748b;
+  font-size: 12px;
+}
+

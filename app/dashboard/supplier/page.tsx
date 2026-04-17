@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { SupplyRequest, FinanceCategory, User } from '@/types';
 import { getCurrentUser } from '@/lib/auth';
-import { getSupplyRequests, updateSupplyRequestStatus, createExpense, getFinanceCategories } from '@/lib/db';
+import { getSupplyRequests, updateSupplyRequestStatus, createExpense, getFinanceCategories, getSystemSettings, getFinanceCategoryById } from '@/lib/db';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'react-toastify';
 import * as XLSX from 'xlsx';
@@ -103,6 +103,17 @@ export default function SupplierDashboard() {
 
   const fetchMaterialCategory = async () => {
     try {
+      // 1. Try to get from system settings
+      const settings = await getSystemSettings();
+      if (settings.materialCategoryId) {
+        const cat = await getFinanceCategoryById(settings.materialCategoryId);
+        if (cat) {
+          setMaterialCategory(cat);
+          return;
+        }
+      }
+
+      // 2. Fallback to name search
       const categories = await getFinanceCategories('expense');
       const materialCat = categories.find(cat => cat.name?.trim().toLowerCase() === 'materialarga harajat'.toLowerCase());
       setMaterialCategory(materialCat ?? null);

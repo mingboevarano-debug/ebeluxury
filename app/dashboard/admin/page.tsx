@@ -2,8 +2,24 @@
 
 import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
-import { User, UserRole, Report, Warning } from '@/types';
-import { getUsers, getReports, getWarnings, deleteUser, getServices, createService, updateService, deleteService, initializeServices } from '@/lib/db';
+import { User, UserRole, Report, Warning, FinanceCategory, Profit, Expense } from '@/types';
+import { 
+  getUsers, 
+  getReports, 
+  getWarnings, 
+  deleteUser, 
+  getServices, 
+  createService, 
+  updateService, 
+  deleteService, 
+  initializeServices,
+  getFinanceCategories,
+  createFinanceCategory,
+  updateFinanceCategory,
+  deleteFinanceCategory,
+  getProfits,
+  getExpenses
+} from '@/lib/db';
 import { createSecondaryUser } from '@/lib/auth';
 import DataTable from 'react-data-table-component';
 
@@ -15,6 +31,10 @@ import WarningLineChart from '@/components/WarningLineChart';
 import ExportButtons from '@/components/ExportButtons';
 import { toast } from 'react-toastify';
 import { Service } from '@/lib/services';
+import CategoryManagement from '@/components/CategoryManagement';
+import CategoryModal from '@/components/CategoryModal';
+import SupplierSettings from '@/components/SupplierSettings';
+import { formatNumberWithSpaces, getNumericValue } from '@/lib/formatNumber';
 
 export default function AdminDashboard() {
   const [users, setUsers] = useState<User[]>([]);
@@ -23,7 +43,10 @@ export default function AdminDashboard() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'employees' | 'reports' | 'warnings' | 'services'>('employees');
+  const [activeTab, setActiveTab] = useState<'employees' | 'reports' | 'warnings' | 'services' | 'categories' | 'supplier_settings'>('employees');
+  const [categories, setCategories] = useState<FinanceCategory[]>([]);
+  const [profits, setProfits] = useState<Profit[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     email: '',
@@ -46,6 +69,19 @@ export default function AdminDashboard() {
     cost: '',
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Category Modal State
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<FinanceCategory | null>(null);
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    type: 'profit' as 'profit' | 'expense',
+    description: '',
+    color: '#3B82F6',
+    icon: '',
+    budget: '',
+    isActive: true
+  });
   
   const { t } = useLanguage();
 
@@ -108,13 +144,38 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchCategories = async () => {
+    try {
+      const data = await getFinanceCategories();
+      setCategories(data);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      setCategories([]);
+    }
+  };
+
+  const fetchFinancials = async () => {
+    try {
+      const [profitsData, expensesData] = await Promise.all([
+        getProfits(),
+        getExpenses()
+      ]);
+      setProfits(profitsData);
+      setExpenses(expensesData);
+    } catch (error) {
+      console.error('Error fetching financial data:', error);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       await Promise.all([
         fetchUsers(),
         fetchReports(),
         fetchWarnings(),
-        fetchServices()
+        fetchServices(),
+        fetchCategories(),
+        fetchFinancials()
       ]);
       setLoading(false);
     };
@@ -149,6 +210,86 @@ export default function AdminDashboard() {
       fetchUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
+    }
+  };
+
+  // Category Handlers
+  const handleOpenCategoryModal = (category?: FinanceCategory) => {
+    if (category) {
+      setEditingCategory(category);
+      setCategoryForm({
+        name: category.name,
+        type: category.type,
+        description: category.description || '',
+        color: category.color || '#3B82F6',
+        icon: category.icon || '',
+        budget: category.budget ? formatNumberWithSpaces(category.budget.toString()) : '',
+        isActive: category.isActive !== false
+      });
+    } else {
+      setEditingCategory(null);
+      setCategoryForm({
+        name: '',
+        type: 'profit',
+        description: '',
+        color: '#3B82F6',
+        icon: '',
+        budget: '',
+        isActive: true
+      });
+    }
+    setIsCategoryModalOpen(true);
+  };
+
+  const handleSubmitCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!categoryForm.name.trim()) {
+      toast.error(t('finance.enter_category_name'));
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const budgetValue = categoryForm.budget ? getNumericValue(categoryForm.budget) : undefined;
+
+      const categoryData = {
+        name: categoryForm.name.trim(),
+        type: categoryForm.type,
+        isActive: categoryForm.isActive !== false,
+        ...(categoryForm.description?.trim() && { description: categoryForm.description.trim() }),
+        ...(categoryForm.color && { color: categoryForm.color }),
+        ...(categoryForm.icon && { icon: categoryForm.icon }),
+        ...(budgetValue !== undefined && { budget: budgetValue }),
+      };
+
+      if (editingCategory) {
+        await updateFinanceCategory(editingCategory.id, categoryData);
+        toast.success(t('finance.category_updated'));
+      } else {
+        await createFinanceCategory(categoryData);
+        toast.success(t('finance.category_created'));
+      }
+
+      await fetchCategories();
+      setIsCategoryModalOpen(false);
+    } catch (error: any) {
+      console.error('Error saving category:', error);
+      toast.error(error.message || t('finance.save_category_error'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    if (!confirm(t('finance.confirm_delete_category'))) return;
+
+    try {
+      await deleteFinanceCategory(id);
+      toast.success(t('finance.category_deleted'));
+      await fetchCategories();
+    } catch (error: any) {
+      console.error('Error deleting category:', error);
+      toast.error(error.message || t('finance.delete_category_error'));
     }
   };
 
@@ -213,6 +354,24 @@ export default function AdminDashboard() {
             >
               {t('admin.tabs.services')}
             </button>
+            <button
+              onClick={() => setActiveTab('categories')}
+              className={`${activeTab === 'categories'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              {t('finance.tab.categories') || 'Categories'}
+            </button>
+            <button
+              onClick={() => setActiveTab('supplier_settings')}
+              className={`${activeTab === 'supplier_settings'
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm`}
+            >
+              {t('admin.supplier_settings') || 'Supplier Settings'}
+            </button>
           </nav>
         </div>
 
@@ -267,6 +426,7 @@ export default function AdminDashboard() {
                       value={formData.role}
                       onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
                     >
+                      <option value="technical_supervisor">{t('role.technical_supervisor') || 'Texnik nazoratchi'}</option>
                       <option value="seller">{t('role.seller')}</option>
                       <option value="foreman">{t('role.foreman')}</option>
                       <option value="supplier">{t('role.supplier')}</option>
@@ -504,7 +664,36 @@ export default function AdminDashboard() {
             />
           </div>
         )}
+
+        {activeTab === 'categories' && (
+          <CategoryManagement
+            categories={categories}
+            type="expense" // Focus on expenses for supplier linking
+            profits={profits}
+            expenses={expenses}
+            onAdd={() => handleOpenCategoryModal()}
+            onEdit={handleOpenCategoryModal}
+            onDelete={handleDeleteCategory}
+          />
+        )}
+
+        {activeTab === 'supplier_settings' && (
+          <SupplierSettings categories={categories} />
+        )}
       </div>
+
+      {/* Category Modal */}
+      {isCategoryModalOpen && (
+        <CategoryModal
+          isOpen={isCategoryModalOpen}
+          onClose={() => setIsCategoryModalOpen(false)}
+          onSubmit={handleSubmitCategory}
+          categoryForm={categoryForm}
+          setCategoryForm={setCategoryForm}
+          editingCategory={editingCategory}
+          submitting={submitting}
+        />
+      )}
 
       {/* Service Modal */}
       <ServiceModal

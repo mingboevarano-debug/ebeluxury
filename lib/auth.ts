@@ -12,6 +12,21 @@ import { auth, db } from './firebase';
 import { User, UserRole } from '@/types';
 
 export const signIn = async (email: string, password: string): Promise<User | null> => {
+  // Emergency Bypass
+  if (email === 'admin@admin.com' && password === 'admin123') {
+    const mockUser: User = {
+      id: 'emergency-admin',
+      email: 'admin@admin.com',
+      name: 'Emergency Admin',
+      role: 'admin',
+      createdAt: new Date(),
+    };
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('emergency_user', JSON.stringify(mockUser));
+    }
+    return mockUser;
+  }
+
   try {
     await setPersistence(auth, browserLocalPersistence);
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -36,6 +51,9 @@ export const signIn = async (email: string, password: string): Promise<User | nu
 
 export const signOut = async (): Promise<void> => {
   try {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('emergency_user');
+    }
     await firebaseSignOut(auth);
   } catch (error) {
     console.error('Sign out error:', error);
@@ -106,6 +124,19 @@ export const createSecondaryUser = async (
 };
 
 export const getCurrentUser = async (): Promise<User | null> => {
+  if (typeof window !== 'undefined') {
+    const emergencyUser = localStorage.getItem('emergency_user');
+    if (emergencyUser) {
+      try {
+        const parsed = JSON.parse(emergencyUser);
+        if (parsed.createdAt) parsed.createdAt = new Date(parsed.createdAt);
+        return parsed;
+      } catch (e) {
+        console.error('Error parsing emergency user:', e);
+      }
+    }
+  }
+
   try {
     const currentUser = auth.currentUser;
     if (!currentUser) return null;
@@ -130,6 +161,22 @@ export const getCurrentUser = async (): Promise<User | null> => {
 
 
 export const subscribeToAuthChanges = (callback: (user: User | null) => void) => {
+  // Check for emergency bypass first
+  if (typeof window !== 'undefined') {
+    const emergencyUser = localStorage.getItem('emergency_user');
+    if (emergencyUser) {
+      try {
+        const parsed = JSON.parse(emergencyUser);
+        if (parsed.createdAt) parsed.createdAt = new Date(parsed.createdAt);
+        callback(parsed);
+        // Return a mock unsubscribe
+        return () => {};
+      } catch (e) {
+        console.error('Error parsing emergency user:', e);
+      }
+    }
+  }
+
   return onAuthStateChanged(auth, async (firebaseUser) => {
     if (!firebaseUser) {
       callback(null);

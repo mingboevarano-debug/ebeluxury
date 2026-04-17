@@ -4,11 +4,15 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import Layout from '@/components/Layout';
-import { Contract, Project, ProjectImage, User, Expense } from '@/types';
+import { Contract, Project, ProjectImage, User, Expense, SupplyRequest } from '@/types';
 import {
   getContractById,
   getProjectsByForeman,
+  getAllProjects,
   getExpenses,
+  getSupplyRequests,
+  getFinanceCategories,
+  createExpense,
   createProject,
   updateContract,
   updateProject,
@@ -18,6 +22,7 @@ import {
   getDraftsByProject,
   deleteDraft,
 } from '@/lib/db';
+import { getConstructionServices, Service } from '@/lib/services';
 import {
   createProjectImage,
   getProjectImagesByProject,
@@ -25,7 +30,7 @@ import {
 } from '@/lib/projectImages';
 import { getCurrentUser } from '@/lib/auth';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { formatNumberWithSpaces } from '@/lib/formatNumber';
+import { formatNumberWithSpaces, parseFormattedNumber, getNumericValue } from '@/lib/formatNumber';
 import {
   FaArrowLeft,
   FaBuilding,
@@ -46,8 +51,10 @@ import {
   FaPlus,
   FaImage,
   FaUpload,
+  FaTruck,
 } from 'react-icons/fa';
 import { MdLocationOn, MdAccessTime, MdCancel, MdWarning } from 'react-icons/md';
+import { HiCheckCircle, HiExclamation, HiExclamationCircle } from 'react-icons/hi';
 import { toast } from 'react-toastify';
 
 const Countdown = dynamic(() => import('react-countdown').then((mod) => mod.default), {
@@ -60,7 +67,7 @@ export default function ForemanContractDetailPage() {
   const router = useRouter();
   const params = useParams();
   const contractId = params?.contractId as string;
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
 
   const [contract, setContract] = useState<Contract | null>(null);
   const [project, setProject] = useState<Project | null>(null);
@@ -68,6 +75,20 @@ export default function ForemanContractDetailPage() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [selecting, setSelecting] = useState(false);
+  const [supplyRequests, setSupplyRequests] = useState<SupplyRequest[]>([]);
+  const [constructionServices, setConstructionServices] = useState<Service[]>([]);
+  const [contractProjectIds, setContractProjectIds] = useState<string[]>([]);
+
+  // Technical supervisor: add expense modal (category: ustalar xizmati uchun xarajat)
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false);
+  const [expenseCategories, setExpenseCategories] = useState<{ id: string; name: string }[]>([]);
+  const [addExpenseForm, setAddExpenseForm] = useState({
+    nameOfWork: '',
+    whatFor: '',
+    amount: '',
+    comment: '',
+  });
+  const [submittingExpense, setSubmittingExpense] = useState(false);
 
   // Modal state
   const [showManageModal, setShowManageModal] = useState(false);
@@ -86,7 +107,7 @@ export default function ForemanContractDetailPage() {
   const [photos, setPhotos] = useState<string[]>([]);
   const [videos, setVideos] = useState<string[]>([]);
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
-  const [supplyItems, setSupplyItems] = useState<Array<{ material: string; quantity: string }>>([{ material: '', quantity: '' }]);
+  const [supplyItems, setSupplyItems] = useState<Array<{ material: string; quantity: string; unit: string }>>([{ material: '', quantity: '', unit: 'dona' }]);
   const [supplyNote, setSupplyNote] = useState('');
   const [supplyDeadline, setSupplyDeadline] = useState('');
   const [submittingSupply, setSubmittingSupply] = useState(false);
@@ -117,6 +138,18 @@ export default function ForemanContractDetailPage() {
   }, [project]);
 
   useEffect(() => {
+    getConstructionServices().then(setConstructionServices).catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (showAddExpenseModal) {
+      getFinanceCategories('expense').then((cats) =>
+        setExpenseCategories(cats.map((c) => ({ id: c.id, name: c.name })))
+      ).catch(console.error);
+    }
+  }, [showAddExpenseModal]);
+
+  useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && zoomedImage) setZoomedImage(null);
     };
@@ -128,43 +161,59 @@ export default function ForemanContractDetailPage() {
     if (!contractId) return;
 
     setLoading(true);
+    let currentUser: User | null = null;
     try {
-      const currentUser = await getCurrentUser();
+      currentUser = await getCurrentUser();
       if (!currentUser) {
         router.push('/login');
         return;
       }
 
-      if (currentUser.role !== 'foreman') {
+      const isTechnicalSupervisor = currentUser.role === 'technical_supervisor';
+      if (currentUser.role !== 'foreman' && !isTechnicalSupervisor) {
         router.push(`/dashboard/${currentUser.role}`);
         return;
       }
 
       setUser(currentUser);
 
-      const [contractData, foremanProjects, allExpenses] = await Promise.all([
+      const [contractData, foremanProjects, allProjectsData, allExpenses] = await Promise.all([
         getContractById(contractId),
-        getProjectsByForeman(currentUser.id),
+        currentUser.role === 'foreman' ? getProjectsByForeman(currentUser.id) : Promise.resolve([]),
+        isTechnicalSupervisor ? getAllProjects() : Promise.resolve([]),
         getExpenses(),
       ]);
 
       if (!contractData) {
         toast.error(t('finance.contract_not_found') || 'Contract not found');
-        router.push('/dashboard/foreman');
+        router.push(isTechnicalSupervisor ? '/dashboard/technical_supervisor' : '/dashboard/foreman');
         return;
       }
 
       setContract(contractData);
 
-      const projectForContract = foremanProjects.find((p) => p.contractId === contractId);
-      setProject(projectForContract || null);
+      let pids: string[] = [];
+      if (isTechnicalSupervisor) {
+        const projectsForContract = (allProjectsData || []).filter((p) => p.contractId === contractId);
+        setProject(projectsForContract[0] || null);
+        pids = projectsForContract.map((p) => p.id);
+        const contractExpenses = allExpenses.filter((e) => e.projectId && pids.includes(e.projectId));
+        setExpenses(contractExpenses);
+      } else {
+        const projectForContract = foremanProjects.find((p) => p.contractId === contractId);
+        setProject(projectForContract || null);
+        pids = projectForContract ? [projectForContract.id] : [];
+        const contractExpenses = allExpenses.filter((e) => e.projectId && pids.includes(e.projectId));
+        setExpenses(contractExpenses);
+      }
+      setContractProjectIds(pids);
 
-      const contractExpenses = allExpenses.filter((e) => e.projectId === contractId);
-      setExpenses(contractExpenses);
+      const allSupply = await getSupplyRequests();
+      setSupplyRequests(allSupply.filter((r) => pids.includes(r.projectId)));
     } catch (error) {
       console.error('Error fetching contract:', error);
       toast.error(t('finance.load_error') || 'Failed to load contract');
-      router.push('/dashboard/foreman');
+      router.push(currentUser?.role === 'technical_supervisor' ? '/dashboard/technical_supervisor' : '/dashboard/foreman');
     } finally {
       setLoading(false);
     }
@@ -396,7 +445,7 @@ export default function ForemanContractDetailPage() {
     }
     setSubmittingSupply(true);
     try {
-      const items = validItems.map((i) => `${i.material.trim()} x${i.quantity.trim()}`);
+      const items = validItems.map((i) => `${i.material.trim()} x${i.quantity.trim()} ${i.unit || 'dona'}`);
       const projectName = project.clientName || project.id.slice(0, 8);
       await createSupplyRequest({
         projectId: project.id,
@@ -425,7 +474,7 @@ export default function ForemanContractDetailPage() {
         console.error('Supply Telegram notify failed:', notifyErr);
       }
       setShowSupplyModal(false);
-      setSupplyItems([{ material: '', quantity: '' }]);
+      setSupplyItems([{ material: '', quantity: '', unit: 'dona' }]);
       setSupplyDeadline('');
       setSupplyNote('');
       toast.success(t('foreman.supply_sent') || 'Supply request sent');
@@ -434,6 +483,57 @@ export default function ForemanContractDetailPage() {
       toast.error(t('foreman.supply_error') || 'Failed to send supply request');
     } finally {
       setSubmittingSupply(false);
+    }
+  };
+
+  const handleAddExpense = async () => {
+    if (!user || !project || !contract) return;
+    const amountNum = getNumericValue(addExpenseForm.amount);
+    if (!addExpenseForm.nameOfWork.trim()) {
+      toast.error((t as (k: string) => string)('technical_supervisor.expense.name_required') || 'Enter name of work');
+      return;
+    }
+    if (amountNum <= 0) {
+      toast.error((t as (k: string) => string)('technical_supervisor.expense.amount_required') || 'Enter valid price');
+      return;
+    }
+    const categoryNameMatch = (name: string) => {
+      const n = name.toLowerCase();
+      return n.includes('ustalar xizmati') || n.includes('ustalar xizmati uchun') || n === 'ustalar xizmati uchun xarajat';
+    };
+    const cat = expenseCategories.find((c) => categoryNameMatch(c.name));
+    if (!cat) {
+      toast.error((t as (k: string) => string)('technical_supervisor.expense.category_not_found') || 'Category "Ustalar xizmati uchun xarajat" not found. Create it in Finance.');
+      return;
+    }
+    setSubmittingExpense(true);
+    try {
+      const commentParts = [addExpenseForm.whatFor.trim(), addExpenseForm.comment.trim()].filter(Boolean);
+      await createExpense({
+        projectId: project.id,
+        projectName: project.clientName || contract.clientName + ' ' + contract.clientSurname,
+        name: addExpenseForm.nameOfWork.trim(),
+        categoryId: cat.id,
+        categoryName: cat.name,
+        paymentMethod: 'cash',
+        amount: amountNum,
+        toWhom: (t as (k: string) => string)('technical_supervisor.expense.to_whom') || 'Ustalar xizmati',
+        comment: commentParts.length ? commentParts.join('\n') : undefined,
+        approvalStatus: 'pending',
+        createdBy: user.id,
+        createdByName: user.name,
+      });
+      const allExpenses = await getExpenses();
+      const pids = contractProjectIds.length ? contractProjectIds : [project.id];
+      setExpenses(allExpenses.filter((e) => e.projectId && pids.includes(e.projectId)));
+      setShowAddExpenseModal(false);
+      setAddExpenseForm({ nameOfWork: '', whatFor: '', amount: '', comment: '' });
+      toast.success((t as (k: string) => string)('technical_supervisor.expense.sent_to_director') || 'Expense sent to director for approval');
+    } catch (err) {
+      console.error(err);
+      toast.error((t as (k: string) => string)('technical_supervisor.expense.error') || 'Failed to add expense');
+    } finally {
+      setSubmittingExpense(false);
     }
   };
 
@@ -454,6 +554,7 @@ export default function ForemanContractDetailPage() {
   // Any foreman can start working on a contract (pending or in_progress) if they don't have a project for it yet.
   const canSelect = !project;
   const canViewProject = !!project;
+  const isTechnicalSupervisor = user?.role === 'technical_supervisor';
 
   return (
     <Layout>
@@ -461,7 +562,7 @@ export default function ForemanContractDetailPage() {
         {/* Header */}
         <div className="mb-4 sm:mb-6">
           <button
-            onClick={() => router.push('/dashboard/foreman')}
+            onClick={() => router.push(isTechnicalSupervisor ? '/dashboard/technical_supervisor' : '/dashboard/foreman')}
             className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 mb-3 sm:mb-4"
           >
             <FaArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 flex-shrink-0" />
@@ -545,53 +646,57 @@ export default function ForemanContractDetailPage() {
                   <FaSearch className="w-5 h-5 flex-shrink-0" />
                   <span>{t('foreman.more_details') || 'Details'}</span>
                 </button>
-                <button
-                  onClick={() => {
-                    setProjectDescription(project.description || '');
-                    setEmployeeCount(project.employeeCount?.toString() || '');
-                    setTotalWorkers(project.totalWorkers?.toString() || '');
-                    setShowManageModal(true);
-                  }}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaFileAlt className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.manage')}</span>
-                </button>
-                <button
-                  onClick={() => setShowReportModal(true)}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaChartBar className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.send_report')}</span>
-                </button>
-                <button
-                  onClick={() => setShowWarningModal(true)}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaExclamationTriangle className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.send_warning')}</span>
-                </button>
-                <button
-                  onClick={() => setShowSupplyModal(true)}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaFileAlt className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.request_supply')}</span>
-                </button>
-                <button
-                  onClick={() => setShowDraftModal(true)}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaPencilRuler className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.draw_draft')}</span>
-                </button>
-                <button
-                  onClick={() => setShowProjectImageModal(true)}
-                  className="flex-1 min-w-0 sm:min-w-[140px] bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
-                >
-                  <FaImage className="w-5 h-5 flex-shrink-0" />
-                  <span>{t('foreman.project_image.upload')}</span>
-                </button>
+                {!isTechnicalSupervisor && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setProjectDescription(project.description || '');
+                        setEmployeeCount(project.employeeCount?.toString() || '');
+                        setTotalWorkers(project.totalWorkers?.toString() || '');
+                        setShowManageModal(true);
+                      }}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaFileAlt className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.manage')}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowReportModal(true)}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaChartBar className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.send_report')}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowWarningModal(true)}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaExclamationTriangle className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.send_warning')}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowSupplyModal(true)}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-orange-600 hover:bg-orange-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaFileAlt className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.request_supply')}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowDraftModal(true)}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaPencilRuler className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.draw_draft')}</span>
+                    </button>
+                    <button
+                      onClick={() => setShowProjectImageModal(true)}
+                      className="flex-1 min-w-0 sm:min-w-[140px] bg-teal-600 hover:bg-teal-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center space-x-2"
+                    >
+                      <FaImage className="w-5 h-5 flex-shrink-0" />
+                      <span>{t('foreman.project_image.upload')}</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -619,13 +724,15 @@ export default function ForemanContractDetailPage() {
                     <div className="p-3">
                       <p className="text-sm text-gray-700">{img.description}</p>
                       <p className="text-xs text-gray-500 mt-1">{new Date(img.createdAt).toLocaleString()}</p>
-                      <button
-                        onClick={() => handleDeleteProjectImage(img.id)}
-                        className="mt-2 text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
-                      >
-                        <FaTrash className="w-3 h-3" />
-                        {t('foreman.project_image.delete')}
-                      </button>
+                      {!isTechnicalSupervisor && (
+                        <button
+                          onClick={() => handleDeleteProjectImage(img.id)}
+                          className="mt-2 text-xs text-red-600 hover:text-red-800 flex items-center gap-1"
+                        >
+                          <FaTrash className="w-3 h-3" />
+                          {t('foreman.project_image.delete')}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -633,6 +740,168 @@ export default function ForemanContractDetailPage() {
             )}
           </div>
         )}
+
+        {/* Services (selected services and status for this project) */}
+        {canViewProject && project && project.selectedServices && project.selectedServices.length > 0 && (
+          <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+            <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center space-x-2">
+              <FaSearch className="text-blue-600" />
+              <span>{(t as (k: string) => string)('technical_supervisor.services') || 'Services'}</span>
+            </h2>
+            <div className="space-y-2">
+              {project.selectedServices.map((serviceId) => {
+                const service = constructionServices.find((s) => s.id === serviceId);
+                const statusInfo = project.serviceStatuses?.[String(serviceId)];
+                const nameKey = locale === 'ru' ? 'nameRu' : locale === 'uz' ? 'nameUz' : 'name';
+                const stageKey = locale === 'ru' ? 'stageRu' : locale === 'uz' ? 'stageUz' : 'stage';
+                const name = service ? (service[nameKey as keyof Service] as string) || service.name : `#${serviceId}`;
+                const stage = service ? (service[stageKey as keyof Service] as string) || service.stage : '';
+                return (
+                  <div
+                    key={serviceId}
+                    className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-gray-200 bg-gray-50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{name}</p>
+                      {stage && <p className="text-xs text-gray-500">{stage}</p>}
+                      {statusInfo?.comment && (
+                        <p className="text-xs text-gray-600 mt-1">{statusInfo.comment}</p>
+                      )}
+                    </div>
+                    {statusInfo?.status && (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                          statusInfo.status === 'done'
+                            ? 'bg-green-100 text-green-800'
+                            : statusInfo.status === 'warning'
+                              ? 'bg-yellow-100 text-yellow-800'
+                              : 'bg-red-100 text-red-800'
+                        }`}
+                      >
+                        {statusInfo.status === 'done' && <HiCheckCircle className="w-4 h-4" />}
+                        {statusInfo.status === 'warning' && <HiExclamation className="w-4 h-4" />}
+                        {statusInfo.status === 'problem' && <HiExclamationCircle className="w-4 h-4" />}
+                        {(t as (k: string) => string)(`foreman.status_${statusInfo.status}`) || statusInfo.status}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Delivery history for this contract */}
+        <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
+          <h2 className="text-xl sm:text-2xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center space-x-2">
+            <FaTruck className="text-indigo-600" />
+            <span>{(t as (k: string) => string)('technical_supervisor.delivery_history') || 'Delivery history'}</span>
+          </h2>
+          {supplyRequests.length === 0 ? (
+            <p className="text-gray-500 py-4">{(t as (k: string) => string)('technical_supervisor.no_deliveries') || 'No deliveries for this contract.'}</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-gray-200">
+              <table className="min-w-[600px] w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.delivery_date') || 'Date'}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.foreman') || 'Foreman'}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.items') || 'Items'}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.status') || 'Status'}</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.delivered_at') || 'Delivered at'}</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {[...supplyRequests]
+                    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                    .map((req) => (
+                      <tr key={req.id}>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                          {new Date(req.createdAt).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-900">{req.foremanName || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700 max-w-xs truncate" title={req.items?.join(', ')}>
+                          {req.items?.length ? req.items.join(', ') : '-'}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <span
+                            className={`px-2 py-1 text-xs font-medium rounded-full ${
+                              req.status === 'delivered' || req.status === 'completed'
+                                ? 'bg-green-100 text-green-800'
+                                : req.status === 'rejected'
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                            }`}
+                          >
+                            {(t as (k: string) => string)(`supplier.status_${req.status}`) || req.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
+                          {req.deliveredAt ? new Date(req.deliveredAt).toLocaleString() : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Material expenses from supplier (full list in same "order history" section) */}
+          {(() => {
+            const isSupplierMaterial = (e: Expense) => {
+              const toSupplier = e.toWhom && /ta'minotchi|supplier|поставщик/i.test(e.toWhom);
+              const materialCategory = e.categoryName && /material|materialarga|материал/i.test(e.categoryName);
+              return toSupplier || materialCategory;
+            };
+            const supplierMaterialExpenses = expenses.filter(isSupplierMaterial);
+            if (supplierMaterialExpenses.length === 0) return null;
+            return (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800 mb-3">
+                  {(t as (k: string) => string)('technical_supervisor.material_expenses_from_supplier') || 'Material expenses from supplier'} ({supplierMaterialExpenses.length})
+                </h3>
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="min-w-[600px] w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.date')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.name')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.category')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{t('finance.table.total')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{(t as (k: string) => string)('technical_supervisor.status') || 'Status'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {[...supplierMaterialExpenses]
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+                        .map((e) => (
+                          <tr key={e.id}>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                              {new Date(e.createdAt).toLocaleDateString()}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{e.name || '-'}</td>
+                            <td className="px-4 py-3 text-sm text-gray-600">{e.categoryName}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-red-600">
+                              {formatNumberWithSpaces(e.amount.toString())} UZS
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span
+                                className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                  e.approvalStatus === 'approved' ? 'bg-green-100 text-green-800' : e.approvalStatus === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
+                                }`}
+                              >
+                                {(t as (k: string) => string)(`technical_supervisor.expense.approval_${e.approvalStatus || 'pending'}`) || (e.approvalStatus || 'pending')}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
 
         {/* Contract Information Card */}
         <div className="bg-white shadow rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
@@ -729,10 +998,22 @@ export default function ForemanContractDetailPage() {
 
           {/* Expenses Section */}
           <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-gray-200">
-            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center space-x-2">
-              <FaChartBar className="text-red-600" />
-              <span>{t('finance.expenses') || 'Expenses'} ({expenses.length})</span>
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3 sm:mb-4">
+              <h2 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center space-x-2">
+                <FaChartBar className="text-red-600" />
+                <span>{t('finance.expenses') || 'Expenses'} ({expenses.length})</span>
+              </h2>
+              {isTechnicalSupervisor && project && (
+                <button
+                  type="button"
+                  onClick={() => setShowAddExpenseModal(true)}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium shadow-sm"
+                >
+                  <FaPlus className="w-4 h-4" />
+                  <span>{(t as (k: string) => string)('technical_supervisor.expense.add') || 'Add expense'}</span>
+                </button>
+              )}
+            </div>
             {expenses.length === 0 ? (
               <p className="text-gray-500 py-4">{t('finance.no_expenses') || 'No expenses for this contract.'}</p>
             ) : (
@@ -755,7 +1036,16 @@ export default function ForemanContractDetailPage() {
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                             {new Date(expense.createdAt).toLocaleDateString()}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{expense.name || '-'}</td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            <span className="inline-flex items-center gap-1.5">
+                              {expense.name || '-'}
+                              {expense.approvalStatus === 'pending' && (
+                                <span className="px-1.5 py-0.5 text-xs font-medium rounded bg-amber-100 text-amber-800">
+                                  {(t as (k: string) => string)('technical_supervisor.expense.pending_badge') || 'Pending'}
+                                </span>
+                              )}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{expense.categoryName}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{expense.toWhom}</td>
                           <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-red-600">
@@ -770,14 +1060,19 @@ export default function ForemanContractDetailPage() {
                   </table>
                 </div>
                 <p className="mt-4 text-lg font-semibold text-red-600">
-                  {t('foreman.total_expenses') || 'Total expenses'}: {formatNumberWithSpaces(expenses.filter(e => !e.approvalStatus || e.approvalStatus === 'approved').reduce((sum, e) => sum + e.amount, 0).toString())} UZS
+                  {t('foreman.total_expenses') || 'Total expenses'}: {formatNumberWithSpaces(expenses.filter((e) => !e.approvalStatus || e.approvalStatus === 'approved').reduce((sum, e) => sum + e.amount, 0).toString())} UZS
                 </p>
+                {expenses.some((e) => e.approvalStatus === 'pending') && (
+                  <p className="mt-1 text-sm text-amber-600">
+                    {(t as (k: string) => string)('technical_supervisor.expense.pending_queue') || 'Pending (in queue)'}: {formatNumberWithSpaces(expenses.filter((e) => e.approvalStatus === 'pending').reduce((sum, e) => sum + e.amount, 0).toString())} UZS
+                  </p>
+                )}
               </>
             )}
           </div>
 
           {/* Start working on this contract (any foreman can join) */}
-          {canSelect && (
+          {canSelect && !isTechnicalSupervisor && (
             <div className="mt-8 pt-6 border-t border-gray-200">
               <button
                 onClick={handleSelectContract}
@@ -872,16 +1167,69 @@ export default function ForemanContractDetailPage() {
                 <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-700">{t('foreman.supply_hint')}</div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">{t('foreman.items_needed')}</label>
-                  <div className="space-y-3">
+                  <div className="space-y-4">
                     {supplyItems.map((item, idx) => (
-                      <div key={idx} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <input type="text" className="flex-1 min-w-0 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.material} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], material: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.material_placeholder')} />
-                        <div className="flex gap-2">
-                          <input type="text" className="w-20 sm:w-24 px-4 py-3 rounded-lg border-2 border-gray-200" value={item.quantity} onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], quantity: e.target.value }; setSupplyItems(c); }} placeholder={t('foreman.quantity_placeholder')} />
-                          <button type="button" onClick={() => setSupplyItems([...supplyItems, { material: '', quantity: '' }])} className="px-3 py-3 rounded-lg bg-orange-600 text-white flex-shrink-0"><FaPlus className="w-4 h-4" /></button>
+                      <div key={idx} className="relative bg-gray-50 border border-gray-200 rounded-xl p-4 sm:p-5 shadow-sm transition-all hover:shadow-md">
+                        {supplyItems.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => setSupplyItems(supplyItems.filter((_, i) => i !== idx))}
+                            className="absolute -top-2 -right-2 w-8 h-8 flex items-center justify-center rounded-full bg-red-100 text-red-600 border border-red-200 hover:bg-red-600 hover:text-white transition-colors shadow-sm z-10"
+                          >
+                            <FaTrash className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">{t('foreman.material_placeholder') || 'Material'}</label>
+                            <input
+                              type="text"
+                              className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all placeholder-gray-300"
+                              value={item.material}
+                              onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], material: e.target.value }; setSupplyItems(c); }}
+                              placeholder={t('foreman.material_placeholder')}
+                            />
+                          </div>
+                          <div className="flex gap-3">
+                            <div className="flex-1">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">{t('foreman.quantity_placeholder') || 'Miqdor'}</label>
+                              <input
+                                type="text"
+                                className="w-full px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all placeholder-gray-300"
+                                value={item.quantity}
+                                onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], quantity: e.target.value }; setSupplyItems(c); }}
+                                placeholder="0"
+                              />
+                            </div>
+                            <div className="w-32">
+                              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 px-1">Birlik</label>
+                              <select
+                                className="w-full px-3 py-3 rounded-xl border-2 border-gray-200 bg-white focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 outline-none transition-all appearance-none cursor-pointer"
+                                value={item.unit || 'dona'}
+                                onChange={(e) => { const c = [...supplyItems]; c[idx] = { ...c[idx], unit: e.target.value }; setSupplyItems(c); }}
+                              >
+                                <option value="dona">Dona</option>
+                                <option value="qop">Qop</option>
+                                <option value="litr">Litr</option>
+                                <option value="metr">Metr</option>
+                                <option value="kvadrat">Kvadrat (m²)</option>
+                                <option value="kg">Kg</option>
+                                <option value="taxta">Taxta</option>
+                                <option value="bog'">Bog'</option>
+                              </select>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => setSupplyItems([...supplyItems, { material: '', quantity: '', unit: 'dona' }])}
+                      className="w-full py-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-500 font-medium hover:border-orange-500 hover:text-orange-600 hover:bg-orange-50 transition-all flex items-center justify-center gap-2 group"
+                    >
+                      <FaPlus className="w-4 h-4 transition-transform group-hover:rotate-90" />
+                      <span>Yana qo'shish</span>
+                    </button>
                   </div>
                 </div>
                 <div>
@@ -894,7 +1242,7 @@ export default function ForemanContractDetailPage() {
                 </div>
                 <div className="flex space-x-2">
                   <button onClick={handleSubmitSupplyRequest} disabled={submittingSupply} className="bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-4 py-2 rounded-md">{submittingSupply ? t('foreman.saving') : t('foreman.submit_supply')}</button>
-                  <button onClick={() => { setShowSupplyModal(false); setSupplyItems([{ material: '', quantity: '' }]); setSupplyDeadline(''); setSupplyNote(''); }} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">{t('foreman.cancel')}</button>
+                  <button onClick={() => { setShowSupplyModal(false); setSupplyItems([{ material: '', quantity: '', unit: 'dona' }]); setSupplyDeadline(''); setSupplyNote(''); }} className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md">{t('foreman.cancel')}</button>
                 </div>
               </div>
             </div>
@@ -1036,6 +1384,100 @@ export default function ForemanContractDetailPage() {
                   <button
                     onClick={() => { setShowProjectImageModal(false); setImageDescription(''); setImageFile(null); }}
                     className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+                  >
+                    {t('foreman.close_btn')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Technical Supervisor: Add expense (Ustalar xizmati uchun xarajat) */}
+        {showAddExpenseModal && project && contract && user && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-3 sm:p-4">
+            <div className="bg-white p-5 sm:p-6 rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl border border-gray-100">
+              <h2 className="text-xl font-semibold mb-1 flex items-center gap-2 text-gray-900">
+                <FaPlus className="text-red-600" />
+                <span>{(t as (k: string) => string)('technical_supervisor.expense.add') || 'Add expense'}</span>
+              </h2>
+              <p className="text-sm text-gray-500 mb-5">
+                {(t as (k: string) => string)('technical_supervisor.expense.category_label') || 'Category'}: <span className="font-medium text-gray-700">Ustalar xizmati uchun xarajat</span>
+              </p>
+              <div className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {(t as (k: string) => string)('technical_supervisor.expense.name_of_work') || 'Name of work'} *
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={addExpenseForm.nameOfWork}
+                    onChange={(e) => setAddExpenseForm((f) => ({ ...f, nameOfWork: e.target.value }))}
+                    placeholder={(t as (k: string) => string)('technical_supervisor.expense.name_of_work_placeholder') || 'e.g. Floor laying, Electrical work'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {(t as (k: string) => string)('technical_supervisor.expense.what_for') || 'What for (quantity/scope)'}
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={addExpenseForm.whatFor}
+                    onChange={(e) => setAddExpenseForm((f) => ({ ...f, whatFor: e.target.value }))}
+                    placeholder={(t as (k: string) => string)('technical_supervisor.expense.what_for_placeholder') || 'e.g. 1 metr of floor, electric cables 4 connections'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {(t as (k: string) => string)('technical_supervisor.expense.price') || 'Price (UZS)'} *
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 font-mono tabular-nums placeholder-gray-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all"
+                    value={addExpenseForm.amount}
+                    onChange={(e) => {
+                      const parsed = parseFormattedNumber(e.target.value);
+                      setAddExpenseForm((f) => ({ ...f, amount: formatNumberWithSpaces(parsed) }));
+                    }}
+                    placeholder="0"
+                  />
+                  {addExpenseForm.amount && (
+                    <p className="mt-1 text-xs text-gray-500">
+                      {(t as (k: string) => string)('technical_supervisor.expense.sent_to_director_hint') || 'Sent to director for approval. Approved expenses count in total.'}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {(t as (k: string) => string)('technical_supervisor.expense.comment') || 'Comment'}
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-gray-900 placeholder-gray-400 focus:border-red-500 focus:ring-2 focus:ring-red-500/20 outline-none transition-all resize-none"
+                    value={addExpenseForm.comment}
+                    onChange={(e) => setAddExpenseForm((f) => ({ ...f, comment: e.target.value }))}
+                    placeholder={(t as (k: string) => string)('technical_supervisor.expense.comment_placeholder') || 'Optional comment'}
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={handleAddExpense}
+                    disabled={submittingExpense || !addExpenseForm.nameOfWork.trim() || !addExpenseForm.amount.trim()}
+                    className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-4 py-3 rounded-xl font-medium shadow-sm transition-colors"
+                  >
+                    {submittingExpense
+                      ? ((t as (k: string) => string)('technical_supervisor.expense.saving') || 'Saving...')
+                      : ((t as (k: string) => string)('technical_supervisor.expense.submit') || 'Add expense')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddExpenseModal(false);
+                      setAddExpenseForm({ nameOfWork: '', whatFor: '', amount: '', comment: '' });
+                    }}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-3 rounded-xl font-medium border border-gray-200"
                   >
                     {t('foreman.close_btn')}
                   </button>

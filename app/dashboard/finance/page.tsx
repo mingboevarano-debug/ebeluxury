@@ -30,7 +30,8 @@ import {
   updateOfficeWasteCategory,
   deleteOfficeWasteCategory,
   getServices,
-  getUsers
+  getUsers,
+  getSystemSettings
 } from '@/lib/db';
 import { subscribeToAuthChanges, getCurrentUser } from '@/lib/auth';
 import { toast } from 'react-toastify';
@@ -320,8 +321,13 @@ export default function FinanceDashboard() {
       // Filter out admin and director from users list
       setUsers(allUsers.filter(u => u.role !== 'admin' && u.role !== 'director'));
 
-      // Set default import category to "Materialga harajat" if it exists
-      const materialCategory = categoriesData.find(c => c.type === 'expense' && (c.name === 'Materialga harajat' || c.name === 'Materialga xarajat'));
+      // Set default import category from settings or fallback to "Materialga harajat"
+      const settings = await getSystemSettings();
+      let materialCategory = categoriesData.find(c => c.type === 'expense' && c.id === settings.materialCategoryId);
+      if (!materialCategory) {
+        materialCategory = categoriesData.find(c => c.type === 'expense' && (c.name === 'Materialga harajat' || c.name === 'Materialga xarajat'));
+      }
+      
       if (materialCategory && !selectedImportCategoryId) {
         setSelectedImportCategoryId(materialCategory.id);
       }

@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
       baseUrl = process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
     }
     if (!baseUrl) {
-      baseUrl = 'https://www.ebe-luxury.uz';
+      baseUrl = 'https://ebe-luxury.vercel.app';
     }
     const webhookUrl = `${baseUrl.replace(/\/$/, '')}/api/telegram-webhook`;
     const url = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}`;

@@ -116,6 +116,7 @@ export default function SecretAddUserPage() {
                 <option value="hr">HR</option>
                 <option value="foreman">Foreman</option>
                 <option value="seller">Seller</option>
+                <option value="technical_supervisor">Technical Supervisor</option>
               </select>
             </div>
           </div>

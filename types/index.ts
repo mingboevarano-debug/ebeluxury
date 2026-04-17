@@ -1,4 +1,4 @@
-export type UserRole = 'director' | 'admin' | 'hr' | 'foreman' | 'seller' | 'supplier';
+export type UserRole = 'director' | 'admin' | 'hr' | 'foreman' | 'seller' | 'supplier' | 'technical_supervisor';
 
 export interface User {
   id: string;
@@ -282,3 +282,6 @@ export interface LocalizedStage {
   uz: string;
 }
 
+export interface SystemSettings {
+  materialCategoryId?: string;
+}

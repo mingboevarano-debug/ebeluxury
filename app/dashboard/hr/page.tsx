@@ -696,6 +696,7 @@ export default function HRDashboard() {
                       <select className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}>
                         <option value="seller">{t('role.seller' as any)}</option>
                         <option value="foreman">{t('role.foreman' as any)}</option>
+                        <option value="technical_supervisor">{t('role.technical_supervisor' as any)}</option>
                         <option value="supplier">{t('role.supplier' as any)}</option>
                         <option value="hr">{t('role.hr' as any)}</option>
                       </select>

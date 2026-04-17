@@ -4,12 +4,12 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { Contract, Profit, Expense, User, FinanceCategory, Project, LocalizedStage } from '@/types';
-import { getContractById, getProfits, getExpenses, getFinanceCategories, createExpense, getAllProjects, getContracts, getServices, getUsers } from '@/lib/db';
+import { getContractById, getProfits, getExpenses, getFinanceCategories, createExpense, getAllProjects, getContracts, getServices, getUsers, updateContract, getProjectsByContractId } from '@/lib/db';
 import { subscribeToAuthChanges } from '@/lib/auth';
 import { toast } from 'react-toastify';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatNumberWithSpaces, getNumericValue } from '@/lib/formatNumber';
-import { FaArrowLeft, FaBuilding, FaUser, FaPhone, FaMapMarkerAlt, FaDollarSign, FaCalendar, FaFileAlt, FaChartLine, FaChartBar, FaPlus } from 'react-icons/fa';
+import { FaArrowLeft, FaBuilding, FaUser, FaPhone, FaMapMarkerAlt, FaDollarSign, FaCalendar, FaFileAlt, FaChartLine, FaChartBar, FaPlus, FaCheck } from 'react-icons/fa';
 import ExpenseModal from '@/components/ExpenseModal';
 
 export default function ContractDetailPage() {
@@ -45,6 +45,7 @@ export default function ContractDetailPage() {
     profitId: '' as string | undefined
   });
   const [submitting, setSubmitting] = useState(false);
+  const [finishing, setFinishing] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeToAuthChanges(async (currentUser: User | null) => {
@@ -102,9 +103,13 @@ export default function ContractDetailPage() {
 
       setContract(contractData);
 
-      // Filter profits and expenses by contractId (projectId is actually contractId)
-      const contractProfits = allProfits.filter(p => p.projectId === contractId);
-      const contractExpenses = allExpenses.filter(e => e.projectId === contractId);
+      // Fetch associated projects
+      const relatedProjects = await getProjectsByContractId(contractId);
+      const allRelatedIds = [contractId, ...relatedProjects.map(p => p.id)];
+
+      // Filter profits and expenses by contractId or any of its projectIds
+      const contractProfits = allProfits.filter(p => p.projectId && allRelatedIds.includes(p.projectId));
+      const contractExpenses = allExpenses.filter(e => e.projectId && allRelatedIds.includes(e.projectId));
 
       setProfits(contractProfits);
       setExpenses(contractExpenses);
@@ -278,6 +283,32 @@ export default function ContractDetailPage() {
     }
   };
 
+  const handleFinishContract = async () => {
+    if (!contract || !user) return;
+    
+    // Check if contract is already completed
+    if (contract.status === 'completed') {
+      toast.info(t('finance.contract.already_completed') || 'Contract is already completed');
+      return;
+    }
+
+    if (!confirm(t('finance.contract.confirm_finish') || 'Are you sure you want to successfully finish this building/contract?')) {
+      return;
+    }
+
+    setFinishing(true);
+    try {
+      await updateContract(contract.id, { status: 'completed' });
+      toast.success(t('finance.contract.finish_success') || 'Contract successfully finished!');
+      await fetchData(); // Refresh data to show new status
+    } catch (error: any) {
+      console.error('Error finishing contract:', error);
+      toast.error(error.message || t('finance.contract.finish_error') || 'Failed to finish contract');
+    } finally {
+      setFinishing(false);
+    }
+  };
+
   if (checkingAccess || loading) {
     return (
       <Layout>
@@ -317,9 +348,26 @@ export default function ContractDetailPage() {
             <FaArrowLeft />
             <span>{t('finance.back_to_finance') || 'Back to Finance'}</span>
           </button>
-          <h1 className="text-3xl font-bold text-gray-900">
-            {t('finance.contract_details') || 'Contract Details'}
-          </h1>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <h1 className="text-3xl font-bold text-gray-900">
+              {t('finance.contract_details') || 'Contract Details'}
+            </h1>
+            
+            {contract.status !== 'completed' && (
+              <button
+                onClick={handleFinishContract}
+                disabled={finishing}
+                className="inline-flex items-center space-x-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-green-200 transition-all transform hover:scale-105 active:scale-95"
+              >
+                {finishing ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <FaCheck className="w-5 h-5" />
+                )}
+                <span>{t('finance.contract.finish_button') || 'Finish Building Successfully'}</span>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Contract Information Card */}

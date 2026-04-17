@@ -57,7 +57,7 @@ export async function editMessageText(
 }
 
 // 2 directors (expense/supply notifications with Accept/Refuse buttons); 1 supplier (supply orders only)
-const TELEGRAM_DIRECTOR_IDS = (process.env.TELEGRAM_DIRECTOR_IDS ?? '5310317109,1119588540')
+const TELEGRAM_DIRECTOR_IDS = (process.env.TELEGRAM_DIRECTOR_IDS ?? '5310317109,8299164114')
   .split(',')
   .map(id => id.trim())
   .filter(Boolean);
@@ -122,7 +122,7 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
   try {
     const amountFormatted = new Intl.NumberFormat('uz-UZ').format(data.amount);
     const paymentMethodText = data.paymentMethod === 'cash' ? 'Naqd' : 'Karta';
-    
+
     let message = data.pendingApproval
       ? `🔔 <b>Director: Yangi Xarajat Tasdiqlashni Kutmoqda</b>\n\n`
       : `💰 <b>Yangi Xarajat Qo'shildi</b>\n\n`;
@@ -132,21 +132,21 @@ export async function sendTelegramNotification(data: ExpenseNotificationData): P
     message += `👤 <b>Kimga:</b> ${escapeHtml(data.toWhom)}\n`;
     message += `💳 <b>To'lov usuli:</b> ${paymentMethodText}\n`;
     message += `👨‍💼 <b>Qo'shgan:</b> ${escapeHtml(data.createdByName)}\n`;
-    
+
     if (data.projectName) {
       message += `🏗️ <b>Loyiha:</b> ${escapeHtml(data.projectName)}\n`;
     }
-    
+
     if (data.stage) {
       message += `🔨 <b>Bosqich:</b> ${escapeHtml(data.stage)}\n`;
     }
-    
+
     if (data.comment) {
       message += `💬 <b>Izoh:</b> ${escapeHtml(data.comment)}\n`;
     }
-    
+
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-    
+
     // Pending expenses: show Accept/Refuse so director can approve from Telegram
     const showButtons = data.pendingApproval && (data.showActionButtons !== false);
     const inlineKeyboard = showButtons && data.expenseId ? [
@@ -218,7 +218,7 @@ export function parseSupplyCallbackData(data: string): { action: 'accept' | 'ref
 
 // Supplier receives "new order" notification with link to web app
 // 1 supplier (receives supply order notifications)
-const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '7924049560';
+const TELEGRAM_SUPPLIER_CHAT_ID = process.env.TELEGRAM_SUPPLIER_CHAT_ID || '7989885696';
 
 export interface SupplyRequestNotificationData {
   requestId: string;
@@ -239,7 +239,7 @@ export async function sendSupplyOrderToSupplier(data: {
   webAppUrl?: string;
 }): Promise<boolean> {
   try {
-    const baseUrl = (data.webAppUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://www.ebe-luxury.uz').replace(/\/$/, '');
+    const baseUrl = (data.webAppUrl || process.env.NEXT_PUBLIC_APP_URL || 'https://ebe-luxury.vercel.app').replace(/\/$/, '');
     const supplierLink = `${baseUrl}/dashboard/supplier`;
     const deadlineStr = new Date(data.deadline).toLocaleString('uz-UZ');
     const itemsPreview = data.items.length > 3

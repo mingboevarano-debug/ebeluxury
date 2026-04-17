@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "node -e \"require('fs').rmSync('.next', {recursive: true, force: true}); try { require('fs').rmSync('node_modules/.cache', {recursive: true, force: true}); } catch (e) {}\""
   },
   "dependencies": {
     "cloudinary": "^1.41.0",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20.10.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
